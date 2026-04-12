@@ -345,7 +345,7 @@ pub fn key_event_to_string(key_event: &KeyEvent) -> String {
     key
 }
 
-/// Parse a key sequence from a string like "<ctrl-a><g>" or just "<a>".
+/// Parse a key sequence from a string like `"<ctrl-a><g>"` or just `"<a>"`.
 pub fn parse_key_sequence(raw: &str) -> color_eyre::Result<Vec<KeyEvent>, String> {
     if raw
         .chars()
