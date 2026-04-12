@@ -205,7 +205,8 @@ pub async fn fetch_all_maps(
                 let (content_type, content_code) = extract_content(tile_val);
 
                 if map_id != 0 {
-                    gs.map_id_to_layer.insert(map_id, layer.clone());
+                    gs.map_id_to_layer
+                        .insert(map_id, layer.clone());
                 }
                 gs.map_tiles.insert(
                     (x, y, layer.clone()),

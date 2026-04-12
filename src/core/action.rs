@@ -16,7 +16,6 @@ use crate::core::game::{AccountLogEntry, CharacterState, GEOrder, GETransaction,
 #[derive(Debug, Clone, PartialEq, Display, Serialize, Deserialize)]
 pub enum Action {
     // ── UI lifecycle ─────────────────────────────────────────────────────────
-
     /// Game logic tick — process cooldowns, animations, periodic tasks (4/sec default).
     Tick,
     /// Render frame — redraw all components to the terminal.
@@ -37,7 +36,6 @@ pub enum Action {
     Help,
 
     // ── Navigation ───────────────────────────────────────────────────────────
-
     /// Move focus to the next component/element.
     FocusNext,
     /// Move focus to the previous component/element.
@@ -46,7 +44,6 @@ pub enum Action {
     ToggleLog,
 
     // ── WebSocket lifecycle ──────────────────────────────────────────────────
-
     /// Attempt to connect to the WebSocket (triggered on disconnect).
     WsConnect,
     /// WebSocket connection successful and authenticated.
@@ -58,7 +55,6 @@ pub enum Action {
 
     // ── Real-time WebSocket notifications ────────────────────────────────────
     // These come from `wss://realtime.artifactsmmo.com`
-
     /// account_log notification — a character performed an action.
     ///
     /// Contains the full LogSchema payload: action type, description, cooldown,
@@ -108,7 +104,6 @@ pub enum Action {
     CharactersFetched(Vec<CharacterState>),
 
     // ── Debugging ────────────────────────────────────────────────────────────
-
     /// Raw WebSocket message (JSON string) for debugging purposes.
     RawWsMessage(String),
 

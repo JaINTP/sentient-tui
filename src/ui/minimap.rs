@@ -91,6 +91,7 @@ impl MinimapCache {
     ///  2. A solid-colour block derived from `tile.content_type`.
     ///
     /// The centre tile always has a "◉" overlay.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         cx: i32,
@@ -126,7 +127,8 @@ impl MinimapCache {
                 }
 
                 // Sprite rendering: use the image when available.
-                let sprite_ok = self.draw_sprite(cx, cy, dx, dy, layer, tiles, image_cache, frame, cell);
+                let sprite_ok =
+                    self.draw_sprite(cx, cy, dx, dy, layer, tiles, image_cache, frame, cell);
 
                 // Fallback block (also handles the center ◉ marker regardless of path).
                 if !sprite_ok {
@@ -140,12 +142,12 @@ impl MinimapCache {
         }
 
         // Overlay the character portrait on the centre tile.
-        if !char_skin.is_empty() && center_cell.width > 0 {
-            if let Some(cache) = image_cache {
-                if let Some(img) = ImageCache::get_or_fetch(cache, "characters", char_skin) {
-                    self.render_char_overlay(char_skin, &img, center_cell, frame);
-                }
-            }
+        if !char_skin.is_empty()
+            && center_cell.width > 0
+            && let Some(cache) = image_cache
+            && let Some(img) = ImageCache::get_or_fetch(cache, "characters", char_skin)
+        {
+            self.render_char_overlay(char_skin, &img, center_cell, frame);
         }
     }
 
@@ -290,18 +292,11 @@ fn draw_tile_block(tile: Option<&MapTile>, is_center: bool, frame: &mut Frame, c
 
     let (bg, icon, code_str): (Color, &str, &str) = match tile {
         None => (Color::Rgb(10, 10, 20), "", ""),
-        Some(t) => (
-            tile_color(t),
-            content_icon(&t.content_type),
-            t.content_code.as_str(),
-        ),
+        Some(t) => (tile_color(t), content_icon(&t.content_type), t.content_code.as_str()),
     };
 
     // 1. Background fill.
-    frame.render_widget(
-        Block::default().style(Style::default().bg(bg)),
-        cell,
-    );
+    frame.render_widget(Block::default().style(Style::default().bg(bg)), cell);
 
     // 2. Content icon + code (only if area is tall enough to show something).
     if !icon.is_empty() && cell.height >= 2 {
@@ -372,27 +367,27 @@ fn overlay_center_marker(frame: &mut Frame, cell: Rect) {
 
 fn tile_color(tile: &MapTile) -> Color {
     match tile.content_type.as_str() {
-        "monster"      => Color::Rgb(110, 25, 25),   // dark crimson
-        "resource"     => Color::Rgb(20, 80, 35),    // forest green
-        "bank"         => Color::Rgb(150, 120, 15),  // dark gold
-        "workshop"     => Color::Rgb(100, 55, 20),   // burnt orange
+        "monster" => Color::Rgb(110, 25, 25),        // dark crimson
+        "resource" => Color::Rgb(20, 80, 35),        // forest green
+        "bank" => Color::Rgb(150, 120, 15),          // dark gold
+        "workshop" => Color::Rgb(100, 55, 20),       // burnt orange
         "tasks_master" => Color::Rgb(65, 25, 130),   // deep purple
         "grand_exchange" => Color::Rgb(20, 90, 140), // ocean blue
-        "cooking"      => Color::Rgb(130, 70, 20),   // warm amber
-        _              => Color::Rgb(35, 40, 55),    // slate (open terrain)
+        "cooking" => Color::Rgb(130, 70, 20),        // warm amber
+        _ => Color::Rgb(35, 40, 55),                 // slate (open terrain)
     }
 }
 
 /// Single-character icon for a tile content type.
 fn content_icon(content_type: &str) -> &'static str {
     match content_type {
-        "monster"        => "☠",
-        "resource"       => "◈",
-        "bank"           => "$",
-        "workshop"       => "⚙",
-        "tasks_master"   => "!",
+        "monster" => "☠",
+        "resource" => "◈",
+        "bank" => "$",
+        "workshop" => "⚙",
+        "tasks_master" => "!",
         "grand_exchange" => "≡",
-        "cooking"        => "~",
-        _                => "",
+        "cooking" => "~",
+        _ => "",
     }
 }

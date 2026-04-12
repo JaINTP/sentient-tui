@@ -140,7 +140,11 @@ impl Component for Sidebar {
             let map_tiles = gs.map_tiles.clone();
             let char_layer = sel_char
                 .as_ref()
-                .and_then(|ch| gs.map_id_to_layer.get(&ch.map_id).cloned())
+                .and_then(|ch| {
+                    gs.map_id_to_layer
+                        .get(&ch.map_id)
+                        .cloned()
+                })
                 .unwrap_or_else(|| "overworld".to_string());
             (ws_status, total_gold, gold_per_hr, events, ge_feed, sel_char, map_tiles, char_layer)
         };
@@ -310,8 +314,16 @@ impl Component for Sidebar {
                 .border_style(Style::default().fg(Color::DarkGray));
             let map_inner = map_block.inner(square_area);
             frame.render_widget(map_block, square_area);
-            self.minimap
-                .render(ch.x, ch.y, &char_layer, &ch.skin, &map_tiles, Some(&self.image_cache), frame, map_inner);
+            self.minimap.render(
+                ch.x,
+                ch.y,
+                &char_layer,
+                &ch.skin,
+                &map_tiles,
+                Some(&self.image_cache),
+                frame,
+                map_inner,
+            );
         }
 
         // ── Phase 2: glitch on the same area as phase 1 ──────────────────

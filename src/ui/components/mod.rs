@@ -14,8 +14,8 @@ pub mod focus_panel;
 pub mod fps;
 #[allow(dead_code)]
 pub mod home;
-pub mod log_panel;
 pub mod loading_screen;
+pub mod log_panel;
 #[allow(dead_code)]
 pub mod sidebar;
 pub mod world_panel;

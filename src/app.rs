@@ -22,8 +22,8 @@ use crate::{
         AccountLogEntry, ActionRecord, CharacterState, GEFeedEntry, GameState, LogEntry, WsStatus,
     },
     ui::components::{
-        Component, character_cards::CharacterCards, fps::FpsCounter, log_panel::LogPanel,
-        sidebar::Sidebar, loading_screen::LoadingScreen,
+        Component, character_cards::CharacterCards, fps::FpsCounter, loading_screen::LoadingScreen,
+        log_panel::LogPanel, sidebar::Sidebar,
     },
     ui::image_cache::{ImageCache, SharedImageCache},
     ui::tui::{Event, Tui},
@@ -177,7 +177,12 @@ impl App {
             info!("websocket listener spawned");
 
             rest::spawn_character_fetch(token.clone(), self.action_tx.clone());
-            rest::spawn_map_fetch(token, self.action_tx.clone(), Arc::clone(&self.game_state), Arc::clone(&self.image_cache));
+            rest::spawn_map_fetch(
+                token,
+                self.action_tx.clone(),
+                Arc::clone(&self.game_state),
+                Arc::clone(&self.image_cache),
+            );
             info!("REST fetches spawned");
         } else {
             info!("ARTIFACTS_TOKEN not set — skipping loading screen");
@@ -263,7 +268,7 @@ impl App {
                 Action::Tick => {
                     self.last_tick_key_events.drain(..);
                     self.tick_count += 1;
-                    
+
                     if self.mode == Mode::Loading {
                         // MapsFetched is only sent after all map tile images have settled
                         // (downloaded, disk-cached, or permanently failed), so no stats

@@ -80,17 +80,17 @@ pub(crate) fn render_skill_cell(
     if let Some(ic) = icon_area {
         let code = name.to_lowercase();
         let key = format!("skills/{code}");
-        if let Some(img) = ImageCache::get_or_fetch_from(image_cache, PLAY_BASE_URL, "skills", &code) {
+        if let Some(img) =
+            ImageCache::get_or_fetch_from(image_cache, PLAY_BASE_URL, "skills", &code)
+        {
             icon_cache.ensure(&key, &img);
         }
         if icon_cache.has(&key) {
             icon_cache.render(&key, frame, ic);
         } else {
             use ratatui::widgets::Paragraph;
-            frame.render_widget(
-                Paragraph::new("·").style(Style::default().fg(Color::DarkGray)),
-                ic,
-            );
+            frame
+                .render_widget(Paragraph::new("·").style(Style::default().fg(Color::DarkGray)), ic);
         }
     }
 

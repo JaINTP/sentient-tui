@@ -115,11 +115,12 @@ impl Component for LoadingScreen {
                     .add_modifier(Modifier::BOLD),
             ),
         ]);
-        frame.render_widget(Paragraph::new(version_line).alignment(Alignment::Center), version_area);
+        frame
+            .render_widget(Paragraph::new(version_line).alignment(Alignment::Center), version_area);
 
         // ── Progress gauge ────────────────────────────────────────────────
         // Centre a 60-col gauge for readability on wide terminals.
-        let gauge_w = area.width.min(60).max(20);
+        let gauge_w = area.width.clamp(20, 60);
         let [_, gauge_col, _] = Layout::horizontal([
             Constraint::Fill(1),
             Constraint::Length(gauge_w),
