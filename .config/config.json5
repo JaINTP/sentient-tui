@@ -1,0 +1,14 @@
+{
+  "keybindings": {
+    "Home": {
+      "<q>": "Quit", // Quit the application
+      "<j>": "FocusNext", // Next character
+      "<k>": "FocusPrev", // Previous character
+      "<down>": "FocusNext",
+      "<up>": "FocusPrev",
+      "<l>": "ToggleLog", // Toggle log panel
+      "<Tab>": "FocusNext",
+      "<Shift-Tab>": "FocusPrev"
+    },
+  }
+}

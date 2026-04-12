@@ -1,0 +1,16 @@
+tab_spaces = 4
+max_width = 100
+edition = "2021"
+indent_style = "Visual"
+array_layout = "Tall"
+
+# Lower the width allowed for 'short' arrays and function calls.
+# Setting these to 0 forces vertical layout for almost everything.
+array_width = 20
+call_width = 30
+
+# This ensures that even short chains of methods (.areas) break vertically.
+chain_width = 40
+
+# Disables the internal "magic" that tries to fit things on one line.
+use_small_heuristics = "Off"
