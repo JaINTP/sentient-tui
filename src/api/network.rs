@@ -40,10 +40,12 @@ pub fn spawn_ws_listener(
                 break;
             }
 
-            info!("connecting to websocket: {}", WS_URL);
+            let ws_endpoint = WS_URL.to_string();
+
+            info!("connecting to websocket: {}", ws_endpoint);
             let _ = action_tx.send(Action::WsConnect);
 
-            match connect_async(WS_URL).await {
+            match connect_async(&ws_endpoint).await {
                 Ok((ws_stream, _response)) => {
                     info!("websocket connected, authenticating");
 

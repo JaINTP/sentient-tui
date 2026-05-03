@@ -49,6 +49,8 @@ pub struct ImageCache {
     total_completed: usize,
     /// Optional channel for routing download events to the TUI footer log.
     log_tx: Option<UnboundedSender<Action>>,
+    /// Base URL override for images, derived from bot_sync_api_url
+    sync_base_url: Option<String>,
 }
 
 impl ImageCache {
@@ -78,6 +80,7 @@ impl ImageCache {
             total_queued: 0,
             total_completed: 0,
             log_tx: None,
+            sync_base_url: std::env::var("BOT_SYNC_API_URL").ok(),
         }))
     }
 
@@ -91,18 +94,23 @@ impl ImageCache {
     /// Otherwise, schedule a background download and return `None` until it arrives.
     ///
     /// Safe to call every frame — duplicate requests are suppressed via `pending`.
+    /// Safe to call every frame — duplicate requests are suppressed via `pending`.
     pub fn get_or_fetch(
         cache: &SharedImageCache,
         category: &str,
         code: &str,
     ) -> Option<Arc<DynamicImage>> {
-        Self::get_or_fetch_from(cache, BASE_URL, category, code)
+        let base_url = {
+            let c = cache.lock().unwrap();
+            c.sync_base_url.clone().unwrap_or_else(|| BASE_URL.to_string())
+        };
+        Self::get_or_fetch_from(cache, &base_url, category, code)
     }
 
     /// Like `get_or_fetch` but uses a custom base URL (e.g. `PLAY_BASE_URL`).
     pub fn get_or_fetch_from(
         cache: &SharedImageCache,
-        base_url: &'static str,
+        base_url: &str,
         category: &str,
         code: &str,
     ) -> Option<Arc<DynamicImage>> {
@@ -164,7 +172,9 @@ impl ImageCache {
 
         // ── Phase 2: spawn download (lock dropped) ────────────────────────
         if should_spawn {
-            let url = format!("{base_url}/{category}/{code}.png");
+            // Strip any trailing slash from base_url, or handle if base_url includes /api/v1
+            let base = base_url.trim_end_matches('/');
+            let url = format!("{base}/{category}/{code}.png");
             let cache_clone = Arc::clone(cache);
             tokio::spawn(async move {
                 let _permit = semaphore.acquire().await;

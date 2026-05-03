@@ -103,6 +103,9 @@ pub enum Action {
     /// Pre-populates character cards with full stat data before WebSocket events arrive.
     CharactersFetched(Vec<CharacterState>),
 
+    /// Swarm demand fetched from the local Bot Control API.
+    SwarmDemandFetched(Vec<(String, u32)>),
+
     // ── Debugging ────────────────────────────────────────────────────────────
     /// Raw WebSocket message (JSON string) for debugging purposes.
     RawWsMessage(String),

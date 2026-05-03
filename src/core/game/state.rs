@@ -686,6 +686,10 @@ pub struct GameState {
     /// `(Instant, total_gold_across_all_chars)` snapshots for gold/hr calc.
     pub gold_snapshots: std::collections::VecDeque<(std::time::Instant, u64)>,
 
+    // Demand
+    /// Swarm demand from the local bot API.
+    pub swarm_demand: Vec<(String, u32)>,
+
     // UI selection
     /// Index of the currently selected character in `characters`.
     pub selected_character: usize,
@@ -706,6 +710,7 @@ impl Default for GameState {
             map_id_to_layer: std::collections::HashMap::new(),
             heartbeat: false,
             gold_snapshots: std::collections::VecDeque::new(),
+            swarm_demand: Vec::new(),
             selected_character: 0,
         }
     }

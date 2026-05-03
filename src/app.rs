@@ -167,7 +167,7 @@ impl App {
 
         // Spawn WebSocket listener + one-shot REST character + map fetch
         let token = std::env::var("ARTIFACTS_TOKEN").unwrap_or_default();
-        if !token.is_empty() {
+        if !token.is_empty() || self.config.config.bot_control_api_url.is_some() {
             self.ws_cancel = CancellationToken::new();
             network::spawn_ws_listener(
                 token.clone(),
@@ -176,16 +176,20 @@ impl App {
             );
             info!("websocket listener spawned");
 
-            rest::spawn_character_fetch(token.clone(), self.action_tx.clone());
+            rest::spawn_character_fetch(token.clone(), self.config.config.bot_control_api_url.clone(), self.action_tx.clone());
             rest::spawn_map_fetch(
                 token,
+                self.config.config.bot_sync_api_url.clone(),
                 self.action_tx.clone(),
                 Arc::clone(&self.game_state),
                 Arc::clone(&self.image_cache),
             );
+            if let Some(bot_url) = &self.config.config.bot_control_api_url {
+                rest::spawn_demand_poll(bot_url.clone(), self.action_tx.clone());
+            }
             info!("REST fetches spawned");
         } else {
-            info!("ARTIFACTS_TOKEN not set — skipping loading screen");
+            info!("ARTIFACTS_TOKEN and BOT_CONTROL_API_URL not set — skipping loading screen");
             let _ = self
                 .action_tx
                 .send(Action::WsDisconnected("ARTIFACTS_TOKEN not set".into()));
@@ -343,6 +347,10 @@ impl App {
                     for ch in &gs.characters {
                         prefetch_character_images(&self.image_cache, ch);
                     }
+                }
+                Action::SwarmDemandFetched(demand) => {
+                    let mut gs = self.game_state.write().unwrap();
+                    gs.swarm_demand = demand.clone();
                 }
                 Action::MapsFetched => {
                     self.maps_fetched = true;

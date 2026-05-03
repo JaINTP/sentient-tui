@@ -116,6 +116,20 @@ direnv allow
 sentient-tui
 ```
 
+### Local Bot API Overrides (Optional)
+
+If you are running your own local bot API servers (e.g. Sentient Artifacts `artirust`), you can configure `sentient-tui` to fetch character and map data from your local servers instead of the official `api.artifactsmmo.com` REST API. The live game event feed will still be routed from the official WebSocket to display accurate global notifications.
+
+Add the following to your `.env` file or export them in your shell:
+
+```env
+# URL for the bot Control API (provides swarm status and character state)
+BOT_CONTROL_API_URL=http://127.0.0.1:8001
+
+# URL for the bot Sync API (provides map data and cached image assets)
+BOT_SYNC_API_URL=http://127.0.0.1:8002
+```
+
 ### Config directory
 
 Application configuration is stored in platform-specific directories:

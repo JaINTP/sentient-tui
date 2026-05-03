@@ -27,6 +27,10 @@ pub struct AppConfig {
     /// Path to the config directory (config files).
     #[serde(default)]
     pub config_dir: PathBuf,
+    /// Optional URL for the bot's Control API.
+    pub bot_control_api_url: Option<String>,
+    /// Optional URL for the bot's Sync API.
+    pub bot_sync_api_url: Option<String>,
 }
 
 /// Full application configuration — keybindings, styles, and directories.
@@ -92,6 +96,14 @@ impl Config {
         }
 
         let mut cfg: Self = builder.build()?.try_deserialize()?;
+
+        if let Ok(url) = std::env::var("BOT_CONTROL_API_URL") {
+            cfg.config.bot_control_api_url = Some(url);
+        }
+        if let Ok(url) = std::env::var("BOT_SYNC_API_URL") {
+            cfg.config.bot_sync_api_url = Some(url);
+        }
+
 
         for (mode, default_bindings) in default_config.keybindings.0.iter() {
             let user_bindings = cfg

@@ -122,7 +122,17 @@ impl Component for Sidebar {
         }
 
         // ── Brief read snapshot ───────────────────────────────────────────
-        let (ws_status, total_gold, gold_per_hr, events, ge_feed, sel_char, map_tiles, char_layer) = {
+        let (
+            ws_status,
+            total_gold,
+            gold_per_hr,
+            events,
+            ge_feed,
+            sel_char,
+            map_tiles,
+            char_layer,
+            demand,
+        ) = {
             let gs = self.game_state.read().unwrap();
             let total_gold: u64 = gs
                 .characters
@@ -132,6 +142,7 @@ impl Component for Sidebar {
             let gold_per_hr = gs.gold_per_hour();
             let events = gs.world_events.clone();
             let ge_feed: Vec<GEFeedEntry> = gs.ge_feed.iter().cloned().collect();
+            let demand = gs.swarm_demand.clone();
             let ws_status = gs.ws_status.clone();
             let sel_idx = gs
                 .selected_character
@@ -146,12 +157,26 @@ impl Component for Sidebar {
                         .cloned()
                 })
                 .unwrap_or_else(|| "overworld".to_string());
-            (ws_status, total_gold, gold_per_hr, events, ge_feed, sel_char, map_tiles, char_layer)
+            (
+                ws_status,
+                total_gold,
+                gold_per_hr,
+                events,
+                ge_feed,
+                sel_char,
+                map_tiles,
+                char_layer,
+                demand,
+            )
         };
 
-        // ── Layout: status(1) + economy(2) + events(dynamic) + ge(compact) + minimap(fill) ──
+        // ── Layout: status(1) + economy(2) + events(dynamic) + demand(dynamic) + ge(compact) + minimap(fill) ──
         let events_rows = (events.len().min(3) as u16).max(1) + 1; // +1 for header
         let has_events = !events.is_empty();
+
+        let demand_rows = (demand.len().min(30) as u16) + 1; // +1 for header
+        let has_demand = !demand.is_empty();
+
         // Show minimap whenever we have a character and enough room (≥12 rows).
         let has_minimap = sel_char.is_some() && inner.height >= 12;
         // Compact GE feed: only show when there's a minimap; a small fixed window.
@@ -165,6 +190,7 @@ impl Component for Sidebar {
             status_area,
             economy_area,
             events_area,
+            demand_area,
             ge_area,
             minimap_area,
         ] = Layout::vertical([
@@ -172,6 +198,11 @@ impl Component for Sidebar {
             Constraint::Length(2),
             Constraint::Length(if has_events {
                 events_rows
+            } else {
+                0
+            }),
+            Constraint::Length(if has_demand {
+                demand_rows
             } else {
                 0
             }),
@@ -261,6 +292,31 @@ impl Component for Sidebar {
                 .border_style(Style::default().fg(Color::DarkGray));
 
             frame.render_widget(List::new(items).block(events_block), events_area);
+        }
+
+        // ── Swarm Demand section ──────────────────────────────────────────
+        if has_demand && demand_area.height > 0 {
+            let items: Vec<ListItem> = demand
+                .iter()
+                .take(demand_area.height.saturating_sub(1) as usize)
+                .map(|(code, qty)| {
+                    ListItem::new(Line::from(vec![
+                        Span::styled("📦 ", Style::default().fg(Color::LightMagenta)),
+                        Span::styled(format!("{}x ", qty), Style::default().fg(Color::Yellow)),
+                        Span::styled(
+                            truncate(code, (demand_area.width as usize).saturating_sub(10)),
+                            Style::default().fg(Color::White),
+                        ),
+                    ]))
+                })
+                .collect();
+
+            let demand_block = Block::default()
+                .title(Span::styled("Swarm Demand", Style::default().fg(Color::DarkGray)))
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(Color::DarkGray));
+
+            frame.render_widget(List::new(items).block(demand_block), demand_area);
         }
 
         // ── GE feed (compact, above minimap) ─────────────────────────────

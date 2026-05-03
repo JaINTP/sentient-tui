@@ -21,10 +21,7 @@ const BASE_URL: &str = "https://api.artifactsmmo.com";
 // ── Characters ────────────────────────────────────────────────────────────────
 
 /// Fetch `GET /my/characters` and dispatch `Action::CharactersFetched`.
-pub async fn fetch_my_characters(token: String, tx: UnboundedSender<Action>) {
-    let url = format!("{BASE_URL}/my/characters");
-    info!("REST: fetching {url}");
-
+pub async fn fetch_my_characters(token: String, bot_control_url: Option<String>, tx: UnboundedSender<Action>) {
     let client = match build_client() {
         Ok(c) => c,
         Err(e) => {
@@ -32,6 +29,39 @@ pub async fn fetch_my_characters(token: String, tx: UnboundedSender<Action>) {
             return;
         }
     };
+
+    if let Some(control_url) = bot_control_url {
+        info!("REST: fetching bots from {control_url}");
+        match crate::api::bot::fetch_bot_summaries(&client, &control_url).await {
+            Ok(summaries) => {
+                let mut characters = Vec::with_capacity(summaries.len());
+                for sum in summaries {
+                    match crate::api::bot::fetch_bot_detail(&client, &control_url, &sum.name).await {
+                        Ok(detail) => {
+                            let mut cs = CharacterState {
+                                name: sum.name.clone(),
+                                ..Default::default()
+                            };
+                            cs.apply_full_schema(&detail);
+                            characters.push(cs);
+                        }
+                        Err(e) => warn!("REST: failed to fetch details for {}: {e}", sum.name),
+                    }
+                }
+                if !characters.is_empty() {
+                    info!("REST: dispatching CharactersFetched ({} bots)", characters.len());
+                    let _ = tx.send(Action::CharactersFetched(characters));
+                }
+            }
+            Err(e) => warn!("REST: /bots request failed: {e}"),
+        }
+        return;
+    }
+
+    let url = format!("{BASE_URL}/my/characters");
+    info!("REST: fetching {url}");
+
+
 
     let resp = client
         .get(&url)
@@ -103,9 +133,37 @@ pub async fn fetch_my_characters(token: String, tx: UnboundedSender<Action>) {
 }
 
 /// Spawn a one-shot tokio task for the character fetch.
-pub fn spawn_character_fetch(token: String, tx: UnboundedSender<Action>) {
+pub fn spawn_character_fetch(token: String, bot_control_url: Option<String>, tx: UnboundedSender<Action>) {
     tokio::spawn(async move {
-        fetch_my_characters(token, tx).await;
+        fetch_my_characters(token, bot_control_url, tx).await;
+    });
+}
+
+/// Spawn a background task to periodically fetch swarm demand from the local Bot Control API.
+pub fn spawn_demand_poll(bot_control_url: String, tx: UnboundedSender<Action>) {
+    tokio::spawn(async move {
+        let client = match build_client() {
+            Ok(c) => c,
+            Err(e) => {
+                error!("REST: client build failed for demand poll: {e}");
+                return;
+            }
+        };
+
+        loop {
+            match crate::api::bot::fetch_swarm_demand(&client, &bot_control_url).await {
+                Ok(demand_map) => {
+                    let mut demand: Vec<(String, u32)> = demand_map.into_iter().collect();
+                    // Sort by quantity descending
+                    demand.sort_by(|a, b| b.1.cmp(&a.1));
+                    let _ = tx.send(Action::SwarmDemandFetched(demand));
+                }
+                Err(e) => {
+                    warn!("REST: failed to fetch swarm demand: {e}");
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
     });
 }
 
@@ -116,6 +174,7 @@ pub fn spawn_character_fetch(token: String, tx: UnboundedSender<Action>) {
 /// ready before the minimap needs to render them.
 pub async fn fetch_all_maps(
     token: String,
+    bot_sync_url: Option<String>,
     tx: UnboundedSender<Action>,
     game_state: Arc<RwLock<GameState>>,
     image_cache: SharedImageCache,
@@ -128,12 +187,13 @@ pub async fn fetch_all_maps(
         }
     };
 
+    let base = bot_sync_url.unwrap_or_else(|| BASE_URL.to_string());
     let mut page = 1u32;
     let page_size = 10000u32;
     let mut total_fetched = 0usize;
 
     loop {
-        let url = format!("{BASE_URL}/maps?page={page}&size={page_size}");
+        let url = format!("{base}/maps?page={page}&size={page_size}");
         info!("REST: fetching {url}");
 
         let resp = client
@@ -277,12 +337,13 @@ pub async fn fetch_all_maps(
 /// Spawn a one-shot tokio task for the map fetch.
 pub fn spawn_map_fetch(
     token: String,
+    bot_sync_url: Option<String>,
     tx: UnboundedSender<Action>,
     game_state: Arc<RwLock<GameState>>,
     image_cache: SharedImageCache,
 ) {
     tokio::spawn(async move {
-        fetch_all_maps(token, tx, game_state, image_cache).await;
+        fetch_all_maps(token, bot_sync_url, tx, game_state, image_cache).await;
     });
 }
 
