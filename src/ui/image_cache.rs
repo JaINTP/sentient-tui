@@ -1,15 +1,32 @@
-/// Image downloading, disk caching, and terminal rendering protocol management.
-///
-/// All ArtifactsMMO image assets follow the pattern:
-///   `https://artifactsmmo.com/images/{category}/{code}.png`
-///
-/// Categories: characters, items, monsters, maps, resources, effects, npcs, badges
-///
-/// Download events are routed to the TUI footer log via a `SystemLog` action sent
-/// over the app's action channel (set with `ImageCache::set_log_tx`).
+//! Image downloading, disk caching, and terminal rendering protocol management.
+//!
+//! All ArtifactsMMO image assets follow the URL pattern:
+//! `https://artifactsmmo.com/images/{category}/{code}.png`
+//!
+//! Known categories: `characters`, `items`, `monsters`, `maps`, `resources`,
+//! `effects`, `npcs`, `badges`.
+//!
+//! The module provides two complementary types:
+//!
+//! - [`ImageCache`] — shared (`Arc<Mutex<…>>`) store that handles HTTP
+//!   downloads, on-disk caching, and in-memory promotion.  Images are fetched
+//!   lazily on first request and a concurrent-download semaphore caps
+//!   outstanding HTTP requests at [`MAX_CONCURRENT`].
+//!
+//! - [`ProtocolCache`] — per-component, non-`Send` store of
+//!   [`StatefulProtocol`] objects (terminal-specific pixel rendering handles).
+//!   Sits alongside each component that renders images; pairs with
+//!   [`ImageCache`] to convert a decoded [`image::DynamicImage`] into
+//!   renderable form.
+//!
+//! Download events are forwarded to the TUI footer log via
+//! [`Action::SystemLog`] when a log sender has been wired up with
+//! [`ImageCache::set_log_tx`].
+
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use directories::BaseDirs;
 use image::DynamicImage;
@@ -19,13 +36,46 @@ use tracing::{debug, warn};
 
 use crate::core::action::Action;
 
+/// Reference-counted, mutex-wrapped [`ImageCache`].
+///
+/// All public [`ImageCache`] methods accept `&SharedImageCache` rather than
+/// `&mut self` so callers can clone and share the handle freely across
+/// component boundaries without holding the lock across await points.
 pub type SharedImageCache = Arc<Mutex<ImageCache>>;
 
+/// Default CDN base URL for ArtifactsMMO image assets.
 pub const BASE_URL: &str = "https://artifactsmmo.com/images";
+
+/// Alternate CDN base URL served by the web client (used for some skin assets).
 pub const PLAY_BASE_URL: &str = "https://play.artifactsmmo.com/images";
 
-/// Maximum number of simultaneous background downloads.
+/// Maximum number of simultaneous background HTTP downloads.
+///
+/// Controlled by the internal [`tokio::sync::Semaphore`]; requests beyond this
+/// cap are not dropped — they queue inside the spawned task until a permit
+/// becomes available.
 const MAX_CONCURRENT: usize = 32;
+
+/// How long to wait before retrying a transiently-failed download (e.g. timeout, 5xx).
+/// 404 responses are never retried.
+const TRANSIENT_RETRY_AFTER: Duration = Duration::from_secs(30);
+
+/// Error returned by the internal [`ImageCache::download`] helper.
+enum DownloadError {
+    /// Server returned 404 — the asset does not exist; never retry.
+    NotFound,
+    /// Any other failure (network error, timeout, 5xx, decode error).
+    Other(Box<dyn std::error::Error + Send + Sync>),
+}
+
+impl std::fmt::Display for DownloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DownloadError::NotFound => write!(f, "not found (404)"),
+            DownloadError::Other(e) => write!(f, "{e}"),
+        }
+    }
+}
 
 // ── ImageCache ────────────────────────────────────────────────────────────────
 
@@ -41,8 +91,11 @@ pub struct ImageCache {
     pending: HashSet<String>,
     /// Semaphore limiting concurrent HTTP requests without dropping them.
     semaphore: Arc<tokio::sync::Semaphore>,
-    /// Keys that permanently failed (404 / decode error) — never retried.
+    /// Keys that permanently failed (404) — never retried.
     failed: HashSet<String>,
+    /// Keys that failed transiently (timeout, 5xx, I/O) with the time of failure.
+    /// Retried after [`TRANSIENT_RETRY_AFTER`].
+    transient_failed: HashMap<String, Instant>,
     /// Total items that have been queued for download
     total_queued: usize,
     /// Total items downloaded or failed
@@ -77,10 +130,13 @@ impl ImageCache {
             pending: HashSet::new(),
             semaphore: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT)),
             failed: HashSet::new(),
+            transient_failed: HashMap::new(),
             total_queued: 0,
             total_completed: 0,
             log_tx: None,
-            sync_base_url: std::env::var("BOT_SYNC_API_URL").ok(),
+            sync_base_url: std::env::var("BOT_SYNC_API_URL")
+                .ok()
+                .map(|url| format!("{}/images", url.trim_end_matches('/'))),
         }))
     }
 
@@ -90,11 +146,19 @@ impl ImageCache {
         cache.lock().unwrap().log_tx = Some(tx);
     }
 
-    /// Return `Some(image)` if the asset is already cached (memory or disk).
-    /// Otherwise, schedule a background download and return `None` until it arrives.
+    /// Return the image for `(category, code)` if available; otherwise schedule a download.
     ///
-    /// Safe to call every frame — duplicate requests are suppressed via `pending`.
-    /// Safe to call every frame — duplicate requests are suppressed via `pending`.
+    /// Resolution order:
+    /// 1. **Memory** — returns immediately if the image was previously decoded.
+    /// 2. **Disk** — loads from `{cache_dir}/{category}/{code}.png` and promotes
+    ///    to memory on a cache hit.
+    /// 3. **Network** — spawns a background Tokio task to download the image from
+    ///    the configured base URL, write it to disk, and insert it into memory.
+    ///    Returns `None` on this first call; subsequent calls return `Some` once
+    ///    the download task completes.
+    ///
+    /// Safe to call every frame — duplicate in-flight requests are suppressed via
+    /// the `pending` set; permanently failed keys are never retried.
     pub fn get_or_fetch(
         cache: &SharedImageCache,
         category: &str,
@@ -153,9 +217,18 @@ impl ImageCache {
                 }
             }
 
-            // Already failed permanently — don't retry
+            // Already failed permanently (404) — don't retry
             if c.failed.contains(&key) {
                 return None;
+            }
+
+            // Transient failure still within cooldown — wait
+            if let Some(&fail_time) = c.transient_failed.get(&key) {
+                if fail_time.elapsed() < TRANSIENT_RETRY_AFTER {
+                    return None;
+                }
+                // Cooldown expired — clear and re-queue
+                c.transient_failed.remove(&key);
             }
 
             // Already fetching
@@ -213,14 +286,24 @@ impl ImageCache {
                         debug!("image_cache: cached {key}");
                     }
                     Err(e) => {
+                        let is_permanent = matches!(e, DownloadError::NotFound);
                         {
                             let mut c = cache_clone.lock().unwrap();
                             c.pending.remove(&key);
-                            c.failed.insert(key.clone());
+                            if is_permanent {
+                                c.failed.insert(key.clone());
+                            } else {
+                                c.transient_failed.insert(key.clone(), Instant::now());
+                            }
                             c.total_completed += 1;
                         }
-                        Self::send_log(&log_tx, "[IMG✗]", format!("{key} failed: {e}"));
-                        warn!("image_cache: download failed {key}: {e}");
+                        let msg = if is_permanent {
+                            format!("{key} not found (404)")
+                        } else {
+                            format!("{key} failed (retry in {TRANSIENT_RETRY_AFTER:?}): {e}")
+                        };
+                        Self::send_log(&log_tx, "[IMG✗]", msg.clone());
+                        warn!("image_cache: {msg}");
                     }
                 }
             });
@@ -248,17 +331,25 @@ impl ImageCache {
     }
 
     /// True if the asset no longer needs to be waited on: it is either in memory,
-    /// loaded from disk, or permanently failed.  Used to gate the loading screen.
+    /// loaded from disk, permanently failed (404), or transiently failed (will retry
+    /// later).  Used to gate the loading screen.
     pub fn is_settled(cache: &SharedImageCache, category: &str, code: &str) -> bool {
         if code.is_empty() {
             return true;
         }
         let key = format!("{category}/{code}");
         let c = cache.lock().unwrap();
-        c.images.contains_key(&key) || c.failed.contains(&key)
+        c.images.contains_key(&key)
+            || c.failed.contains(&key)
+            || c.transient_failed.contains_key(&key)
     }
 
-    /// Returns (total_completed, total_queued)
+    /// Return cumulative download progress as `(completed, queued)`.
+    ///
+    /// `completed` counts both successful downloads and permanent failures.
+    /// `queued` counts every asset that has ever been requested via
+    /// [`get_or_fetch`][Self::get_or_fetch] or [`prefetch`][Self::prefetch].
+    /// The loading screen uses this ratio to drive its progress bar.
     pub fn get_stats(cache: &SharedImageCache) -> (usize, usize) {
         let c = cache.lock().unwrap();
         (c.total_completed, c.total_queued)
@@ -266,6 +357,9 @@ impl ImageCache {
 
     // ── Internals ─────────────────────────────────────────────────────────
 
+    /// Send a [`Action::SystemLog`] message over the optional action channel.
+    ///
+    /// Silently discards the message when no sender has been registered.
     fn send_log(tx: &Option<UnboundedSender<Action>>, tag: &str, message: String) {
         if let Some(tx) = tx {
             let _ = tx.send(Action::SystemLog {
@@ -275,26 +369,40 @@ impl ImageCache {
         }
     }
 
+    /// Download `url`, write raw bytes to `disk_path`, and decode the image.
+    ///
+    /// Parent directories of `disk_path` are created if they do not exist.
+    ///
+    /// Returns [`DownloadError::NotFound`] for 404 responses (permanent failure)
+    /// and [`DownloadError::Other`] for everything else (transient, may retry).
     async fn download(
         http: &reqwest::Client,
         url: &str,
         disk_path: &std::path::Path,
-    ) -> Result<DynamicImage, Box<dyn std::error::Error + Send + Sync>> {
-        let bytes = http
+    ) -> Result<DynamicImage, DownloadError> {
+        let response = http
             .get(url)
             .send()
-            .await?
-            .error_for_status()?
+            .await
+            .map_err(|e| DownloadError::Other(e.into()))?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(DownloadError::NotFound);
+        }
+
+        let bytes = response
+            .error_for_status()
+            .map_err(|e| DownloadError::Other(e.into()))?
             .bytes()
-            .await?;
+            .await
+            .map_err(|e| DownloadError::Other(e.into()))?;
 
         if let Some(parent) = disk_path.parent() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent).map_err(|e| DownloadError::Other(e.into()))?;
         }
-        std::fs::write(disk_path, &bytes)?;
+        std::fs::write(disk_path, &bytes).map_err(|e| DownloadError::Other(e.into()))?;
 
-        let img = image::load_from_memory(&bytes)?;
-        Ok(img)
+        image::load_from_memory(&bytes).map_err(|e| DownloadError::Other(e.into()))
     }
 }
 
@@ -319,6 +427,11 @@ impl Default for ProtocolCache {
 }
 
 impl ProtocolCache {
+    /// Create a new, empty [`ProtocolCache`].
+    ///
+    /// Probes the terminal for its pixel-rendering capability via
+    /// `Picker::from_query_stdio`; falls back to Unicode half-block characters
+    /// if the capability cannot be determined (e.g. when stdout is not a TTY).
     pub fn new() -> Self {
         let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
         Self {

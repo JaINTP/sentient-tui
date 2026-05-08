@@ -1,6 +1,20 @@
+//! Shared rendering helpers for the character-cards sub-system.
+//!
+//! This module collects small, stateless utilities that are used across
+//! multiple character-card sub-modules (`card`, `stats`, `skills`, `gear`):
+//!
+//! - [`log_type_icon`] — maps an `account_log` type string to a display icon and colour.
+//! - [`normalise_code`] — converts snake_case item codes to title-case display strings.
+//! - [`truncate`] — Unicode-aware string truncation with ellipsis.
+//! - [`CharacterExt`] — extension trait that infers the active skill from a character's
+//!   current task and last action.
+
 use crate::core::game::CharacterState;
 use ratatui::style::Color;
 
+/// Map an `account_log` type string to a `(icon, colour)` pair.
+///
+/// Returns `("·", DarkGray)` for unrecognised log types.
 pub(crate) fn log_type_icon(log_type: &str) -> (&'static str, Color) {
     match log_type {
         "fight" | "multi_fight" => ("✕", Color::Red),
@@ -18,8 +32,8 @@ pub(crate) fn log_type_icon(log_type: &str) -> (&'static str, Color) {
     }
 }
 
-/// Convert an item code like `wooden_staff` → `Wooden Staff`.
-pub(crate) fn pretty_item(code: &str) -> String {
+/// Convert a code like `wooden_staff` → `Wooden Staff`.
+pub(crate) fn normalise_code(code: &str) -> String {
     code.split('_')
         .map(|word| {
             let mut chars = word.chars();
@@ -32,6 +46,10 @@ pub(crate) fn pretty_item(code: &str) -> String {
         .join(" ")
 }
 
+/// Truncate `s` to at most `max` Unicode scalar values, appending `…` if cut.
+///
+/// Returns an empty string when `max` is 0.  Does not split multi-byte
+/// characters because it operates on `char` boundaries, not byte boundaries.
 pub(crate) fn truncate(s: &str, max: usize) -> String {
     if max == 0 {
         return String::new();
@@ -49,7 +67,14 @@ pub(crate) fn truncate(s: &str, max: usize) -> String {
 
 // ── Component impl ────────────────────────────────────────────────────────────
 
+/// Extension trait for [`CharacterState`] providing UI-layer helpers.
 pub(crate) trait CharacterExt {
+    /// Infer the skill name that the character is currently exercising, if any.
+    ///
+    /// Returns `Some("Mining")`, `Some("Cooking")`, etc. when the character's
+    /// `last_action` is `"gathering"` or `"crafting"` and the `task_type` maps
+    /// to a known skill name.  Returns `None` for all other action types or
+    /// unrecognised task types.
     fn activity_skill(&self) -> Option<&'static str>;
 }
 

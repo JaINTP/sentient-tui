@@ -1,3 +1,13 @@
+//! Combat and attribute stats sub-panel for a character card.
+//!
+//! Renders a compact 9-row grid showing Core, Attack, Damage, and Resistance
+//! stats.  Each section is headed by a styled separator drawn by
+//! [`render_section_label`], and each data row contains up to four stat cells
+//! rendered by [`render_stat_row`].
+//!
+//! Each cell optionally displays the ArtifactsMMO effect icon (fetched from
+//! `ImageCache`) to the left of the abbreviated stat name and its value.
+
 use super::ICON_COL_W;
 use crate::{
     core::game::CharacterState,
@@ -11,6 +21,17 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+/// Render the full 9-row stats grid for `char` into `area`.
+///
+/// The grid is arranged as four labelled sections:
+///
+/// - **Core** — Haste, Critical Strike, Wisdom, Prospecting, Initiative, Threat, Damage
+/// - **Attack** — elemental attack values (Fire, Earth, Water, Air)
+/// - **Damage** — elemental damage percentages (Fire, Earth, Water, Air)
+/// - **Resist** — elemental resistances (Fire, Earth, Water, Air)
+///
+/// `image_cache` supplies raw decoded images; `icon_cache` converts them to
+/// terminal rendering protocols on first use.  Both must outlive the draw call.
 pub(crate) fn draw_stats_grid(
     frame: &mut Frame,
     area: Rect,
@@ -112,6 +133,10 @@ pub(crate) fn draw_stats_grid(
     );
 }
 
+/// Render a section separator line: `"─ {label} ───────────"`.
+///
+/// The label is drawn in `color`; the trailing dashes fill the remaining width
+/// in dark grey.
 fn render_section_label(frame: &mut Frame, area: Rect, label: &str, color: Color) {
     let w = area.width as usize;
     let label_part = format!("─ {label} ");
@@ -125,6 +150,19 @@ fn render_section_label(frame: &mut Frame, area: Rect, label: &str, color: Color
     );
 }
 
+/// Render a single row of up to four equally-spaced stat cells.
+///
+/// Each element of `stats` is a `(effect_code, label, value, color)` tuple:
+///
+/// - `effect_code` — the ArtifactsMMO effect image key (e.g. `"attack_fire"`),
+///   used to fetch the icon from `image_cache`.
+/// - `label` — abbreviated display name (e.g. `"Fire"`).
+/// - `value` — the integer stat value; drawn in `color` when positive,
+///   dark-grey when zero or negative.
+/// - `color` — accent colour for the stat when its value is positive.
+///
+/// When the cell is too narrow to show the icon column, only the value is
+/// rendered.
 pub(crate) fn render_stat_row(
     frame: &mut Frame,
     area: Rect,

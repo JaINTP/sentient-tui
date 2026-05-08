@@ -2,13 +2,11 @@
 name = "sentient-tui"
 version = "0.1.0"
 edition = "2024"
-description = "A simple TUI to monitor tour bots actions through the official websocket connection."
+description = "Terminal UI client for ArtifactsMMO — real-time character monitoring, minimap, Grand Exchange feed, and action log via WebSocket."
 authors = ["jaintp <dev@jaintp.com>"]
 license = "MIT"
 build = "build.rs"
 
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 better-panic = "0.3.0"

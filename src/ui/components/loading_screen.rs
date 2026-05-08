@@ -13,7 +13,7 @@ use ratatui::{
 use crate::ui::components::Component;
 use crate::ui::image_cache::{ImageCache, SharedImageCache};
 
-/// Braille-art banner lines — ASCII art title.
+/// ASCII-art banner rendered at the top of the loading screen.
 const BANNER: &[&str] = &[
     r#"  ██████ ▓█████  ███▄    █ ▄▄▄█████▓ ██▓ ▓█████  ███▄    █ ▄▄▄█████▓"#,
     r#"▒██    ▒ ▓█   ▀  ██ ▀█   █ ▓  ██▒ ▓▒▓██▒ ▓█   ▀  ██ ▀█   █ ▓  ██▒ ▓▒"#,
@@ -36,6 +36,7 @@ const BANNER: &[&str] = &[
     r#"                               ░      ░                 "#,
 ];
 
+/// Braille spinner frames — cycled at one frame per three render ticks.
 const SPINNER: [&str; 4] = ["⠋", "⠙", "⠸", "⠴"];
 
 /// Loading screen component shown while assets download.

@@ -1,5 +1,12 @@
+//! Equipment / gear sub-panel for a character card.
+//!
+//! Renders a "Gear" section separator followed by an 8-row × 2-column table
+//! of equipment slots.  Each slot cell shows a small item thumbnail (fetched
+//! from `ImageCache`) alongside a truncated slot label and the item's
+//! title-cased display name.  Empty slots are indicated with an em dash.
+
 use super::ICON_COL_W;
-use super::utils::{pretty_item, truncate};
+use super::utils::{normalise_code, truncate};
 use crate::{
     core::game::CharacterState,
     ui::image_cache::{ImageCache, ProtocolCache, SharedImageCache},
@@ -12,6 +19,21 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+/// Render the full gear table for `char` into `area`.
+///
+/// The table begins with a `"─ Gear ───"` section separator then renders 8
+/// rows of paired equipment slots:
+///
+/// | Row | Left | Right |
+/// |-----|------|-------|
+/// | 0 | Weapon | Shield |
+/// | 1 | Helmet | Body |
+/// | 2 | Legs | Boots |
+/// | 3 | Ring 1 | Ring 2 |
+/// | 4 | Amulet | Rune |
+/// | 5 | Artifact 1 | Artifact 2 |
+/// | 6 | Artifact 3 | Bag |
+/// | 7 | Utility 1 | Utility 2 |
 pub(crate) fn draw_gear_table(
     frame: &mut Frame,
     area: Rect,
@@ -65,6 +87,7 @@ pub(crate) fn draw_gear_table(
     }
 }
 
+/// Render a section separator line: `"─ {label} ───────────"`.
 fn render_section_label(frame: &mut Frame, area: Rect, label: &str, color: Color) {
     let w = area.width as usize;
     let label_part = format!("─ {label} ");
@@ -116,7 +139,7 @@ pub(crate) fn render_gear_slot_with_icon(
         Paragraph::new(if code.is_empty() {
             "—".to_string()
         } else {
-            truncate(&pretty_item(code), item_w)
+            truncate(&normalise_code(code), item_w)
         })
         .style(Style::default().fg(if code.is_empty() {
             Color::DarkGray

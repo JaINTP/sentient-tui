@@ -32,7 +32,7 @@ use crate::{
 /// Maximum entries kept in the footer log.
 const MAX_LOG: usize = 500;
 /// Maximum GE feed entries in sidebar.
-const MAX_GE: usize = 60;
+const MAX_GE: usize = 40;
 /// Maximum active world events displayed.
 const MAX_EVENTS: usize = 20;
 /// Maximum action history rows per character.
@@ -144,6 +144,19 @@ impl App {
         })
     }
 
+    /// Start the TUI event loop and block until the user quits.
+    ///
+    /// Initialises the terminal, registers all components, spawns background
+    /// tasks (WebSocket listener, REST character fetch, map fetch), then enters
+    /// the main `loop { handle_events → handle_actions }` cycle.
+    ///
+    /// Returns `Ok(())` after the terminal has been restored to its original
+    /// state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the terminal cannot be initialised, a component
+    /// registration fails, or a fatal I/O error occurs during the loop.
     pub async fn run(&mut self) -> color_eyre::Result<()> {
         let mut tui = Tui::new()?
             .tick_rate(self.tick_rate)
@@ -167,7 +180,13 @@ impl App {
 
         // Spawn WebSocket listener + one-shot REST character + map fetch
         let token = std::env::var("ARTIFACTS_TOKEN").unwrap_or_default();
-        if !token.is_empty() || self.config.config.bot_control_api_url.is_some() {
+        if !token.is_empty()
+            || self
+                .config
+                .config
+                .bot_control_api_url
+                .is_some()
+        {
             self.ws_cancel = CancellationToken::new();
             network::spawn_ws_listener(
                 token.clone(),
@@ -176,10 +195,20 @@ impl App {
             );
             info!("websocket listener spawned");
 
-            rest::spawn_character_fetch(token.clone(), self.config.config.bot_control_api_url.clone(), self.action_tx.clone());
+            rest::spawn_character_fetch(
+                token.clone(),
+                self.config
+                    .config
+                    .bot_control_api_url
+                    .clone(),
+                self.action_tx.clone(),
+            );
             rest::spawn_map_fetch(
                 token,
-                self.config.config.bot_sync_api_url.clone(),
+                self.config
+                    .config
+                    .bot_sync_api_url
+                    .clone(),
                 self.action_tx.clone(),
                 Arc::clone(&self.game_state),
                 Arc::clone(&self.image_cache),
@@ -216,6 +245,11 @@ impl App {
         Ok(())
     }
 
+    /// Poll the next TUI event and translate it into an [`Action`] on the bus.
+    ///
+    /// Key events are forwarded to [`Self::handle_key_event`] for keybinding
+    /// lookup; all other events (Tick, Render, Resize, Quit) are converted
+    /// directly.  Each component also receives a chance to handle the raw event.
     async fn handle_events(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         let Some(event) = tui.next_event().await else {
             return Ok(());
@@ -237,6 +271,11 @@ impl App {
         Ok(())
     }
 
+    /// Look up `key` in the current mode's keybinding map and dispatch an action.
+    ///
+    /// Single-key bindings are dispatched immediately.  Multi-key chords (e.g.
+    /// `g` then `g`) accumulate in `last_tick_key_events` and are checked for a
+    /// full match; the buffer is cleared on each [`Action::Tick`].
     fn handle_key_event(&mut self, key: KeyEvent) -> color_eyre::Result<()> {
         let action_tx = self.action_tx.clone();
         let Some(keymap) = self
@@ -263,6 +302,13 @@ impl App {
         Ok(())
     }
 
+    /// Drain the action bus and apply each [`Action`] to game state and components.
+    ///
+    /// All pending actions are processed in FIFO order.  State-mutating actions
+    /// (WebSocket status, character data, world events, GE feed) are handled
+    /// inline; UI-local actions are forwarded to each component's `update()`
+    /// method.  Any follow-up actions returned by components are re-queued for
+    /// the next drain pass.
     fn handle_actions(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         while let Ok(action) = self.action_rx.try_recv() {
             if action != Action::Tick && action != Action::Render {
@@ -507,12 +553,21 @@ impl App {
         Ok(())
     }
 
+    /// Handle a terminal resize event by updating the viewport and re-rendering.
     fn handle_resize(&mut self, tui: &mut Tui, w: u16, h: u16) -> color_eyre::Result<()> {
         tui.resize(Rect::new(0, 0, w, h))?;
         self.render(tui)?;
         Ok(())
     }
 
+    /// Draw one frame to the terminal.
+    ///
+    /// In `Loading` mode only [`LoadingScreen`] is rendered.  In `Home` mode
+    /// the layout is split into character grid (80%), sidebar (20%), and footer
+    /// log (15% of total height), with the FPS overlay drawn on top of the full
+    /// area.  Render errors from individual components are forwarded as
+    /// `Action::Error` rather than propagated, so one misbehaving component
+    /// cannot crash the loop.
     fn render(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         tui.draw(|frame| {
             let area = frame.area();
@@ -573,6 +628,10 @@ impl App {
         Ok(())
     }
 
+    /// Return mutable references to all registered components in draw order.
+    ///
+    /// Used to iterate components for event registration, `init`, `update`, and
+    /// `draw` calls without duplicating the list in multiple methods.
     fn components_mut(&mut self) -> Vec<&mut dyn Component> {
         vec![
             &mut self.character_cards,
@@ -584,8 +643,13 @@ impl App {
     }
 }
 
-// ── GameState mutation helpers (called from the main action loop) ─────────────
+// ── GameState mutation helpers ────────────────────────────────────────────────
+//
+// These free functions operate directly on `GameState` fields and are called
+// from `handle_actions`.  Keeping them as free functions (rather than methods
+// on `App`) avoids borrowing the entire `App` while `game_state` is locked.
 
+/// Append a log entry, evicting the oldest when the buffer reaches [`MAX_LOG`].
 fn push_log(
     entries: &mut VecDeque<LogEntry>,
     tag: &'static str,
@@ -604,6 +668,7 @@ fn push_log(
     });
 }
 
+/// Append a GE feed entry, evicting the oldest when the buffer reaches [`MAX_GE`].
 fn push_ge_entry(feed: &mut VecDeque<GEFeedEntry>, entry: GEFeedEntry) {
     if feed.len() >= MAX_GE {
         feed.pop_front();
@@ -611,6 +676,13 @@ fn push_ge_entry(feed: &mut VecDeque<GEFeedEntry>, entry: GEFeedEntry) {
     feed.push_back(entry);
 }
 
+/// Insert or update a character in `gs.characters` from a full REST payload.
+///
+/// If a character with the same name already exists, its fields are replaced
+/// wholesale — except `last_action` and `last_description`, which are preserved
+/// if they carry meaningful state (non-empty and not `"idle"`).  Cooldown
+/// timers are updated in `gs.cooldown_expires` and `gs.cooldown_totals` when
+/// the incoming payload reports a non-zero remaining cooldown.
 fn upsert_character_full(gs: &mut GameState, incoming: &CharacterState) {
     if let Some(existing) = gs
         .characters
@@ -637,6 +709,13 @@ fn upsert_character_full(gs: &mut GameState, incoming: &CharacterState) {
     }
 }
 
+/// Apply a WebSocket `account_log` notification to shared game state.
+///
+/// Updates the matching character's `last_action`, `last_description`, and
+/// any fields present in `entry.content.character`.  Inserts a skeleton
+/// [`CharacterState`] if the character is not yet known.  Also updates the
+/// per-character cooldown timers and action history ring-buffer, and appends
+/// a styled entry to the footer log.
 fn apply_account_log(gs: &mut GameState, entry: &AccountLogEntry) {
     let name = &entry.character;
 
@@ -741,7 +820,10 @@ fn prefetch_character_images(cache: &SharedImageCache, ch: &CharacterState) {
     }
 }
 
-/// Map an image log tag to a display color.
+/// Map an image-download log tag to a display colour.
+///
+/// Tags containing `✓` or `◈` (success/disk-hit) render green; tags containing
+/// `✗` (failure) render red; all others (e.g. `[IMG↓]` downloading) render cyan.
 fn system_log_color(tag: &str) -> ratatui::style::Color {
     use ratatui::style::Color;
     if tag.contains('✓') || tag.contains("◈") {
@@ -753,6 +835,9 @@ fn system_log_color(tag: &str) -> ratatui::style::Color {
     } // [IMG↓] downloading
 }
 
+/// Map an `account_log` type string to a fixed-width tag label and colour.
+///
+/// All tags are padded to 8 characters so the log panel columns align cleanly.
 fn log_type_tag(log_type: &str) -> (&'static str, ratatui::style::Color) {
     use ratatui::style::Color;
     match log_type {

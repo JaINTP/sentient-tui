@@ -1,3 +1,12 @@
+//! Focus panel component — detail view for the currently selected character.
+//!
+//! Displays a compact info strip (account, position, status, cooldown) and
+//! a scrollable action history for the character most recently selected via
+//! the `FocusNext` / `FocusPrev` keybindings.
+//!
+//! The panel is currently not wired into the primary layout but is available
+//! as a drop-in component wherever a single-character detail view is needed.
+
 use std::collections::{HashMap, VecDeque};
 
 use ratatui::{
@@ -16,27 +25,43 @@ use crate::{
     core::game::{AccountLogEntry, CharacterState},
 };
 
+/// Maximum number of account-log entries retained per character in the history buffer.
 const MAX_HISTORY: usize = 100;
 
+/// Detail panel for the currently focused character.
+///
+/// Renders a brief stats strip followed by a chronological action history.
+/// Stays synchronised with live WebSocket updates for the focused character's
+/// position and last action without requiring a full [`GameState`] read lock.
 #[derive(Default)]
 pub struct FocusPanel {
+    /// Action bus sender — stored for future event dispatch.
     command_tx: Option<UnboundedSender<Action>>,
+    /// Global configuration — keybindings and styles.
     config: Config,
-    /// The currently-selected character (populated from sidebar sync).
+    /// The currently focused character, updated on selection and live events.
     character: Option<CharacterState>,
-    /// Per-character recent account_log history (ring buffer).
+    /// Per-character account-log ring buffer keyed by character name.
     history: HashMap<String, VecDeque<AccountLogEntry>>,
 }
 
 impl FocusPanel {
+    /// Create a new [`FocusPanel`] with no character selected.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Set or clear the focused character.
+    ///
+    /// Replaces the internally tracked character state.  Pass `None` to show
+    /// the empty-selection placeholder.
     pub fn set_character(&mut self, character: Option<CharacterState>) {
         self.character = character;
     }
 
+    /// Append an account-log entry to the per-character ring buffer.
+    ///
+    /// Oldest entries are evicted once the buffer reaches [`MAX_HISTORY`] items.
     fn push_log(&mut self, entry: AccountLogEntry) {
         let buf = self
             .history
@@ -48,6 +73,9 @@ impl FocusPanel {
         buf.push_back(entry);
     }
 
+    /// Render a single account-log entry as a styled [`Line`].
+    ///
+    /// Format: `<icon> <description>  cd <N>s`
     fn render_log_line(entry: &AccountLogEntry) -> Line<'static> {
         let color = log_type_color(&entry.log_type);
         let label = log_type_label(&entry.log_type);
@@ -69,6 +97,7 @@ impl FocusPanel {
     }
 }
 
+/// Map an `account_log` type string to a terminal foreground colour.
 fn log_type_color(log_type: &str) -> Color {
     match log_type {
         "fight" | "multi_fight" => Color::Red,
@@ -85,6 +114,7 @@ fn log_type_color(log_type: &str) -> Color {
     }
 }
 
+/// Map an `account_log` type string to a single Unicode icon character.
 fn log_type_label(log_type: &str) -> &'static str {
     match log_type {
         "fight" => "⚔",
@@ -105,6 +135,7 @@ fn log_type_label(log_type: &str) -> &'static str {
     }
 }
 
+/// Truncate a string to at most `max` characters, appending `…` if cut.
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()

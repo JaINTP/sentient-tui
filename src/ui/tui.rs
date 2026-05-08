@@ -75,6 +75,16 @@ pub struct Tui {
 }
 
 impl Tui {
+    /// Create a new [`Tui`] instance bound to `stdout`.
+    ///
+    /// Initialises the crossterm backend and a ratatui `Terminal` but does
+    /// **not** enter raw mode or start the event loop.  Call [`Tui::enter`]
+    /// to do both.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ratatui `Terminal` cannot be constructed
+    /// (e.g. `stdout` is not a valid TTY).
     pub fn new() -> color_eyre::Result<Self> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         Ok(Self {
@@ -90,28 +100,38 @@ impl Tui {
         })
     }
 
+    /// Set the game-logic tick rate in ticks per second (builder pattern).
     pub fn tick_rate(mut self, tick_rate: f64) -> Self {
         self.tick_rate = tick_rate;
         self
     }
 
+    /// Set the render frame rate in frames per second (builder pattern).
     pub fn frame_rate(mut self, frame_rate: f64) -> Self {
         self.frame_rate = frame_rate;
         self
     }
 
+    /// Enable or disable mouse event capture (builder pattern).
     pub fn mouse(mut self, mouse: bool) -> Self {
         self.mouse = mouse;
         self
     }
 
+    /// Enable or disable bracketed paste support (builder pattern).
     pub fn paste(mut self, paste: bool) -> Self {
         self.paste = paste;
         self
     }
 
+    /// (Re)start the background event-polling task.
+    ///
+    /// Cancels any previously running task, creates a fresh cancellation token,
+    /// then spawns a new Tokio task that generates [`Event::Tick`] and
+    /// [`Event::Render`] on configured intervals while forwarding crossterm
+    /// events via the unbounded channel.
     pub fn start(&mut self) {
-        self.cancel(); // Cancel any existing task
+        self.cancel();
         self.cancellation_token = CancellationToken::new();
         let event_loop = Self::event_loop(
             self.event_tx.clone(),
@@ -124,6 +144,21 @@ impl Tui {
         });
     }
 
+    /// Core event-polling loop — runs until the cancellation token is triggered.
+    ///
+    /// Sends an [`Event::Init`] immediately on startup, then drives three
+    /// concurrent futures in a `select!` loop:
+    ///
+    /// - A `tick_interval` that fires at `tick_rate` Hz → [`Event::Tick`]
+    /// - A `render_interval` that fires at `frame_rate` Hz → [`Event::Render`]
+    /// - The crossterm [`EventStream`], mapping raw crossterm events to the
+    ///   typed [`Event`] variants; non-press key events and unrecognised
+    ///   crossterm events are silently discarded.
+    ///
+    /// The loop exits when the cancellation token fires, the event stream
+    /// closes, or the receiver end of the channel has been dropped.  Before
+    /// returning it calls `cancellation_token.cancel()` so the [`Tui`] owner
+    /// can observe the shutdown.
     async fn event_loop(
         event_tx: UnboundedSender<Event>,
         cancellation_token: CancellationToken,
@@ -167,6 +202,17 @@ impl Tui {
         cancellation_token.cancel();
     }
 
+    /// Stop the background event-polling task, blocking until it finishes.
+    ///
+    /// Cancels the task via the cancellation token, then polls
+    /// [`JoinHandle::is_finished`] in 1 ms increments.  If the task has not
+    /// finished within 50 ms it is forcibly aborted; if it still has not
+    /// finished after 100 ms a tracing error is emitted and the method returns.
+    ///
+    /// # Errors
+    ///
+    /// Currently always returns `Ok(())`.  The error return type is kept for
+    /// future compatibility.
     pub fn stop(&self) -> color_eyre::Result<()> {
         self.cancel();
         let mut counter = 0;
@@ -184,6 +230,19 @@ impl Tui {
         Ok(())
     }
 
+    /// Enter the terminal's alternate screen and start the event loop.
+    ///
+    /// Enables crossterm raw mode, switches to the alternate screen buffer,
+    /// hides the cursor, and — if configured — enables mouse capture and
+    /// bracketed paste.  Finally calls [`Tui::start`] to spawn the background
+    /// event-polling task.
+    ///
+    /// Call [`Tui::exit`] to restore the terminal to its original state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any crossterm terminal-setup call fails (e.g. the
+    /// output is not a TTY, or the OS denies the `ioctl`).
     pub fn enter(&mut self) -> color_eyre::Result<()> {
         crossterm::terminal::enable_raw_mode()?;
         crossterm::execute!(stdout(), EnterAlternateScreen, cursor::Hide)?;
@@ -197,6 +256,19 @@ impl Tui {
         Ok(())
     }
 
+    /// Leave the alternate screen and restore the terminal to its original state.
+    ///
+    /// Stops the background event-polling task, flushes any buffered output,
+    /// disables bracketed paste and mouse capture (if they were enabled), shows
+    /// the cursor, leaves the alternate screen, and disables raw mode.
+    ///
+    /// This method is also called by the [`Drop`] implementation, so it is safe
+    /// to let a [`Tui`] drop naturally on process exit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`Tui::stop`], [`Tui::flush`], or any crossterm
+    /// tear-down call fails.
     pub fn exit(&mut self) -> color_eyre::Result<()> {
         self.stop()?;
         if crossterm::terminal::is_raw_mode_enabled()? {
@@ -213,10 +285,26 @@ impl Tui {
         Ok(())
     }
 
+    /// Signal the background event-polling task to stop.
+    ///
+    /// Triggers the internal [`CancellationToken`].  The task will exit at its
+    /// next `select!` iteration.  This does **not** wait for the task to finish;
+    /// call [`Tui::stop`] if you need to block until it has exited.
     pub fn cancel(&self) {
         self.cancellation_token.cancel();
     }
 
+    /// Suspend the application, releasing the terminal back to the shell.
+    ///
+    /// Calls [`Tui::exit`] to restore the terminal, then raises `SIGTSTP` on
+    /// Unix platforms (a no-op on Windows) so the shell job-control layer can
+    /// pause the process.  Call [`Tui::resume`] to re-enter the terminal after
+    /// the process is foregrounded again.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`Tui::exit`] fails or if `signal_hook` cannot raise
+    /// `SIGTSTP`.
     pub fn suspend(&mut self) -> color_eyre::Result<()> {
         self.exit()?;
         #[cfg(not(windows))]
@@ -224,16 +312,32 @@ impl Tui {
         Ok(())
     }
 
+    /// Resume the application after a [`Tui::suspend`].
+    ///
+    /// Re-enters the alternate screen and restarts the event-polling task by
+    /// delegating to [`Tui::enter`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`Tui::enter`] fails (see its documentation).
     pub fn resume(&mut self) -> color_eyre::Result<()> {
         self.enter()?;
         Ok(())
     }
 
+    /// Receive the next [`Event`] from the background event-polling task.
+    ///
+    /// Awaits the next item on the internal unbounded channel.  Returns `None`
+    /// when the sender has been dropped (i.e. the event loop has exited and
+    /// will not produce further events).
     pub async fn next_event(&mut self) -> Option<Event> {
         self.event_rx.recv().await
     }
 }
 
+/// Dereference to the inner [`ratatui::Terminal`], allowing callers to call
+/// terminal methods (e.g. [`ratatui::Terminal::draw`]) directly on a [`Tui`]
+/// reference without going through the `.terminal` field.
 impl Deref for Tui {
     type Target = ratatui::Terminal<Backend<Stdout>>;
 
@@ -242,12 +346,18 @@ impl Deref for Tui {
     }
 }
 
+/// Mutable dereference to the inner [`ratatui::Terminal`], enabling direct
+/// mutable access (e.g. for `draw` calls that require `&mut Terminal`).
 impl DerefMut for Tui {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.terminal
     }
 }
 
+/// Restore the terminal on drop.
+///
+/// Calls [`Tui::exit`] and panics on failure.  Prefer calling [`Tui::exit`]
+/// explicitly so errors can be handled gracefully before the value is dropped.
 impl Drop for Tui {
     fn drop(&mut self) {
         self.exit().unwrap();

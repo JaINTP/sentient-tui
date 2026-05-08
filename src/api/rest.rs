@@ -189,7 +189,7 @@ pub async fn fetch_all_maps(
 
     let base = bot_sync_url.unwrap_or_else(|| BASE_URL.to_string());
     let mut page = 1u32;
-    let page_size = 10000u32;
+    let page_size = 100u32;
     let mut total_fetched = 0usize;
 
     loop {
@@ -362,22 +362,20 @@ fn build_client() -> reqwest::Result<reqwest::Client> {
 ///   B) `{ "data": [...], "pages": N, "total": T }` — flat (most endpoints)
 fn extract_page(json: &serde_json::Value) -> (Vec<serde_json::Value>, u32) {
     let data = json.get("data").unwrap_or(json);
+    
+    // Determine total pages from top-level, meta, or data node
+    let pages = json.get("pages")
+        .or_else(|| json.get("meta").and_then(|m| m.get("pages")))
+        .or_else(|| data.get("pages"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1) as u32;
+
     if let Some(items) = data
         .get("items")
         .and_then(|v| v.as_array())
     {
-        // Shape A: pages lives inside the data object.
-        let pages = data
-            .get("pages")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(1) as u32;
         (items.clone(), pages)
     } else if let Some(arr) = data.as_array() {
-        // Shape B: data IS the array; pages lives at the top level of the response.
-        let pages = json
-            .get("pages")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(1) as u32;
         (arr.clone(), pages)
     } else {
         (Vec::new(), 1)

@@ -61,6 +61,10 @@ pub struct LogPanel {
 }
 
 impl LogPanel {
+    /// Create a new [`LogPanel`] bound to `game_state`.
+    ///
+    /// The panel starts visible, with its boot animation beginning immediately.
+    /// Pass the shared [`GameState`] that is written by the WebSocket handler.
     pub fn new(game_state: Arc<RwLock<GameState>>) -> Self {
         let mut boot_glitch = EffectManager::default();
         boot_glitch.add_unique_effect(
@@ -87,10 +91,17 @@ impl LogPanel {
         }
     }
 
+    /// Return `true` if the panel is currently set to render.
+    ///
+    /// Toggled by [`Action::ToggleLog`].
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
+    /// Prime the per-entry glitch effect for the next [`GLITCH_DURATION_MS`] milliseconds.
+    ///
+    /// Called whenever new log entries arrive.  The glitch is applied only to
+    /// the bottom-most visible row (the most recently arrived entry).
     fn arm_glitch(&mut self) {
         self.glitch_timer_ms = GLITCH_DURATION_MS;
         let glitch = Glitch::builder()
@@ -210,6 +221,11 @@ impl Component for LogPanel {
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
+/// Convert a [`LogEntry`] to a coloured ratatui [`ListItem`].
+///
+/// Format: `<tag> <character>: <message>` where `tag` is bold and coloured
+/// according to [`LogEntry::tag_color`], the character name is bold white, and
+/// the message is grey.  The message is truncated to fit within `width`.
 fn render_entry(entry: &LogEntry, width: u16) -> ListItem<'static> {
     let tag = entry.tag;
     let tag_color = entry.tag_color;
@@ -238,6 +254,7 @@ fn render_entry(entry: &LogEntry, width: u16) -> ListItem<'static> {
     ListItem::new(line)
 }
 
+/// Truncate `s` to at most `max` Unicode scalar values, appending `…` if cut.
 fn truncate(s: &str, max: usize) -> String {
     if max == 0 {
         return String::new();

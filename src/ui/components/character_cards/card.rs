@@ -1,3 +1,25 @@
+//! Per-character card renderer — the main `draw_card` entry point.
+//!
+//! This module contains the [`CharacterCards::draw_card`] method which
+//! orchestrates the complete rendering of a single character card.  The card
+//! is divided into several optional sections whose visibility depends on the
+//! available height:
+//!
+//! - **Border** — always rendered; colour reflects the character's current
+//!   activity.
+//! - **Gauge strip** — HP, XP, Bag, and Cooldown progress bars (+ optional
+//!   portrait column).
+//! - **Skills grid** — rendered when height ≥ 12 rows (see [`draw_skills_grid`]).
+//! - **Stats grid** — rendered when height ≥ 21 rows (see [`draw_stats_grid`]).
+//! - **Gear table** — rendered when height ≥ 22 rows (see [`draw_gear_table`]).
+//! - **History feed** — up to 6 rows of recent action log entries.
+//! - **Signal bar** — cooldown timer or last action description.
+//! - **Goal line** — current task and activity label.
+//!
+//! During the card's boot animation (controlled by `elapsed_ms`), individual
+//! sections are hidden until their per-element reveal timestamp elapses
+//! (see [`element_reveal_ms`]).
+
 use super::animation::{
     CARD_BORDER_PHASE_MS, EL_BAG, EL_CD, EL_GEAR, EL_GOAL, EL_HISTORY, EL_HP, EL_PORTRAIT,
     EL_SIGNAL, EL_SKILLS, EL_STATS, EL_XP, element_reveal_ms,
@@ -21,6 +43,24 @@ use ratatui::{
 use std::collections::VecDeque;
 
 impl CharacterCards {
+    /// Render a single character card into `area`.
+    ///
+    /// # Parameters
+    ///
+    /// - `frame` — the current ratatui render frame.
+    /// - `area` — the full bounding box for this card (including border).
+    /// - `char` — live character state (name, HP, XP, inventory, etc.).
+    /// - `history` — recent action log entries, newest at the back; at most 6
+    ///   entries are displayed.
+    /// - `cooldown_remaining` — seconds until the character's next action.
+    /// - `cooldown_total` — full duration of the current cooldown (used to
+    ///   compute the gauge fill ratio).
+    /// - `heartbeat` — toggles the `♥` / `·` pulse symbol in the card title.
+    /// - `is_selected` — when `true`, the border is rendered in bold and the
+    ///   default border colour falls back to Cyan instead of DarkGray.
+    /// - `elapsed_ms` — milliseconds since this card's boot animation began.
+    ///   Pass [`u64::MAX`] to skip the animation and render all elements
+    ///   immediately.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw_card(
         &mut self,
@@ -32,8 +72,6 @@ impl CharacterCards {
         cooldown_total: f64,
         heartbeat: bool,
         is_selected: bool,
-        // Milliseconds elapsed since this card's boot animation started.
-        // Pass `u64::MAX` to skip animation (card fully loaded).
         elapsed_ms: u64,
     ) {
         // ── Border colour based on activity state ─────────────────────────

@@ -1,3 +1,14 @@
+//! World panel component — standalone view of world events and Grand Exchange activity.
+//!
+//! Provides a self-contained split layout showing:
+//! - **Active world events** — monsters or hazards currently spawned on the map.
+//! - **Grand Exchange feed** — a rolling history of recent orders and completed trades.
+//!
+//! This component maintains its own local copy of events and GE entries,
+//! updated via the [`Action`] bus.  It is currently not wired into the primary
+//! layout (the sidebar handles the same data in the main view), but is available
+//! as a drop-in replacement panel when a full-screen world overview is needed.
+
 use std::collections::VecDeque;
 
 use ratatui::{
@@ -16,30 +27,48 @@ use crate::{
     core::game::{GEOrder, GETransaction, WorldEvent},
 };
 
+/// Maximum number of world events retained before the oldest is evicted.
 const MAX_EVENTS: usize = 20;
+/// Maximum number of GE feed entries retained before the oldest is evicted.
 const MAX_GE: usize = 30;
 
+/// Standalone world-events and Grand Exchange panel.
+///
+/// Tracks its own state rather than reading from [`crate::core::game::GameState`],
+/// making it suitable for use in an independent pane without holding a read lock
+/// during rendering.
 pub struct WorldPanel {
+    /// Action bus sender — stored for future event dispatch.
     command_tx: Option<UnboundedSender<Action>>,
+    /// Global configuration — keybindings and styles.
     config: Config,
-    /// Currently active world events (event_spawn adds, event_removed removes)
+    /// Currently active world events.  Entries are added on `EventSpawn` and
+    /// removed on `EventRemoved`.
     active_events: Vec<WorldEvent>,
-    /// Recent GE activity (orders + transactions), newest at back
+    /// Rolling Grand Exchange feed — orders and transactions, newest at the back.
     ge_feed: VecDeque<GEFeedEntry>,
+    /// Current WebSocket connection state, used to render a status indicator.
     ws_status: WsStatus,
 }
 
+/// Local copy of WebSocket connection state for the panel's status badge.
 #[derive(Debug, Clone)]
 enum WsStatus {
+    /// Awaiting initial connection or reconnecting after a drop.
     Connecting,
+    /// Authenticated and receiving events.
     Connected,
+    /// Connection lost; contains the disconnect reason string.
     #[allow(dead_code)]
     Disconnected(String),
 }
 
+/// A single Grand Exchange feed entry — either a new order or a completed trade.
 #[derive(Debug, Clone)]
 enum GEFeedEntry {
+    /// A buy or sell order was posted to the Grand Exchange.
     Order(GEOrder),
+    /// A Grand Exchange order was fully or partially filled.
     Transaction(GETransaction),
 }
 
@@ -56,10 +85,12 @@ impl Default for WorldPanel {
 }
 
 impl WorldPanel {
+    /// Create a new [`WorldPanel`] in the connecting state with empty feeds.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Append a GE feed entry, evicting the oldest when the buffer is full.
     fn push_ge(&mut self, entry: GEFeedEntry) {
         if self.ge_feed.len() >= MAX_GE {
             self.ge_feed.pop_front();

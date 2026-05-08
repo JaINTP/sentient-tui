@@ -16,8 +16,9 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
+use crossterm::event::{MouseEvent, MouseEventKind};
 use tachyonfx::fx::Glitch;
 use tachyonfx::{Duration as FxDuration, Effect, EffectManager};
 use tokio::sync::mpsc::UnboundedSender;
@@ -27,7 +28,8 @@ use crate::{
     core::action::Action,
     core::config::Config,
     core::game::{GEFeedEntry, GameState, WsStatus},
-    ui::image_cache::SharedImageCache,
+    ui::components::character_cards::utils::normalise_code,
+    ui::image_cache::{ImageCache, ProtocolCache, SharedImageCache},
     ui::minimap::MinimapCache,
 };
 
@@ -54,6 +56,14 @@ pub struct Sidebar {
     boot_glitch: EffectManager<&'static str>,
     /// Timestamp of last render — used to compute per-frame delta.
     last_tick: Instant,
+    /// ProtocolCache for rendering image icons in the sidebar (like Swarm Demand).
+    icon_cache: ProtocolCache,
+    /// Current scroll offset for the demand list.
+    demand_scroll: usize,
+    /// Render area of the demand block (to detect scroll events).
+    demand_area: Rect,
+    /// Total number of demands (to compute max scroll).
+    demand_count: usize,
 }
 
 impl Sidebar {
@@ -78,6 +88,10 @@ impl Sidebar {
             born_at: Instant::now(),
             boot_glitch,
             last_tick: Instant::now(),
+            icon_cache: ProtocolCache::new(),
+            demand_scroll: 0,
+            demand_area: Rect::default(),
+            demand_count: 0,
         }
     }
 }
@@ -91,6 +105,30 @@ impl Component for Sidebar {
     fn register_config_handler(&mut self, config: Config) -> color_eyre::Result<()> {
         self.config = config;
         Ok(())
+    }
+
+    fn handle_mouse_event(&mut self, mouse: MouseEvent) -> color_eyre::Result<Option<Action>> {
+        let inside = mouse.column >= self.demand_area.x
+            && mouse.column < self.demand_area.x + self.demand_area.width
+            && mouse.row >= self.demand_area.y
+            && mouse.row < self.demand_area.y + self.demand_area.height;
+            
+        if !inside {
+            return Ok(None);
+        }
+
+        match mouse.kind {
+            MouseEventKind::ScrollDown => {
+                let max_scroll = self.demand_count.saturating_sub(self.demand_area.height.saturating_sub(2) as usize);
+                self.demand_scroll = self.demand_scroll.saturating_add(1).min(max_scroll);
+                Ok(Some(Action::Tick)) // force redraw
+            }
+            MouseEventKind::ScrollUp => {
+                self.demand_scroll = self.demand_scroll.saturating_sub(1);
+                Ok(Some(Action::Tick)) // force redraw
+            }
+            _ => Ok(None),
+        }
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> color_eyre::Result<()> {
@@ -174,7 +212,6 @@ impl Component for Sidebar {
         let events_rows = (events.len().min(3) as u16).max(1) + 1; // +1 for header
         let has_events = !events.is_empty();
 
-        let demand_rows = (demand.len().min(30) as u16) + 1; // +1 for header
         let has_demand = !demand.is_empty();
 
         // Show minimap whenever we have a character and enough room (≥12 rows).
@@ -182,6 +219,19 @@ impl Component for Sidebar {
         // Compact GE feed: only show when there's a minimap; a small fixed window.
         let ge_rows: u16 = if has_minimap {
             5
+        } else {
+            0
+        };
+
+        // Compute minimap target height before layout to guarantee it gets space
+        let sq_h = if has_minimap {
+            let (fw, fh) = self.minimap.font_size();
+            let h = if fw > 0 && fh > 0 {
+                ((inner.width as u32 * fw as u32) / fh as u32) as u16
+            } else {
+                inner.width / 2
+            };
+            h.max(4)
         } else {
             0
         };
@@ -201,13 +251,13 @@ impl Component for Sidebar {
             } else {
                 0
             }),
-            Constraint::Length(if has_demand {
-                demand_rows
+            if has_demand {
+                Constraint::Length((demand.len() as u16 + 1).min(26)) // max 15 items
             } else {
-                0
-            }),
-            Constraint::Length(ge_rows),
-            Constraint::Fill(1),
+                Constraint::Length(0)
+            },
+            Constraint::Min(0),
+            Constraint::Length(sq_h),
         ])
         .areas(inner);
 
@@ -295,28 +345,93 @@ impl Component for Sidebar {
         }
 
         // ── Swarm Demand section ──────────────────────────────────────────
-        if has_demand && demand_area.height > 0 {
-            let items: Vec<ListItem> = demand
-                .iter()
-                .take(demand_area.height.saturating_sub(1) as usize)
-                .map(|(code, qty)| {
-                    ListItem::new(Line::from(vec![
-                        Span::styled("📦 ", Style::default().fg(Color::LightMagenta)),
-                        Span::styled(format!("{}x ", qty), Style::default().fg(Color::Yellow)),
-                        Span::styled(
-                            truncate(code, (demand_area.width as usize).saturating_sub(10)),
-                            Style::default().fg(Color::White),
-                        ),
-                    ]))
-                })
-                .collect();
+        self.demand_count = demand.len();
+        self.demand_area = demand_area;
 
+        if has_demand && demand_area.height > 0 {
             let demand_block = Block::default()
                 .title(Span::styled("Swarm Demand", Style::default().fg(Color::DarkGray)))
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(Color::DarkGray));
 
-            frame.render_widget(List::new(items).block(demand_block), demand_area);
+            let inner_area = demand_block.inner(demand_area);
+            frame.render_widget(demand_block, demand_area);
+
+            if inner_area.height > 0 {
+                let visible_count = inner_area.height as usize;
+                
+                // Adjust scroll if terminal resizes
+                let max_scroll = self.demand_count.saturating_sub(visible_count);
+                self.demand_scroll = self.demand_scroll.min(max_scroll);
+
+                let rows = Layout::vertical(
+                    (0..visible_count)
+                        .map(|_| Constraint::Length(1))
+                        .collect::<Vec<_>>(),
+                )
+                .split(inner_area);
+
+                for (i, (code, qty)) in demand
+                    .iter()
+                    .skip(self.demand_scroll)
+                    .take(visible_count)
+                    .enumerate()
+                {
+                    let row_area = rows[i];
+                    let [
+                        icon_area,
+                        qty_area,
+                        name_area,
+                    ] = Layout::horizontal([
+                        Constraint::Length(3), // ICON_COL_W equivalent
+                        Constraint::Length(6), // e.g. " 10x  "
+                        Constraint::Min(0),
+                    ])
+                    .areas(row_area);
+
+                    // Fetch and render icon
+                    let key = format!("items/{code}");
+                    if let Some(img) = ImageCache::get_or_fetch(&self.image_cache, "items", code) {
+                        self.icon_cache.ensure(&key, &img);
+                    }
+                    if self.icon_cache.has(&key) {
+                        self.icon_cache
+                            .render(&key, frame, icon_area);
+                    } else {
+                        frame.render_widget(
+                            Paragraph::new("·").style(Style::default().fg(Color::DarkGray)),
+                            icon_area,
+                        );
+                    }
+
+                    // Quantity
+                    frame.render_widget(
+                        Paragraph::new(format!("{}x ", qty))
+                            .style(Style::default().fg(Color::Yellow)),
+                        qty_area,
+                    );
+
+                    // Normalised Name
+                    let name = normalise_code(code);
+                    frame.render_widget(
+                        Paragraph::new(truncate(&name, name_area.width.saturating_sub(2) as usize))
+                            .style(Style::default().fg(Color::White)),
+                        name_area,
+                    );
+                }
+
+                if max_scroll > 0 {
+                    let scrollbar = Scrollbar::default()
+                        .orientation(ScrollbarOrientation::VerticalRight)
+                        .begin_symbol(Some("▲"))
+                        .end_symbol(Some("▼"));
+                    let mut scrollbar_state = ScrollbarState::default()
+                        .content_length(max_scroll)
+                        .position(self.demand_scroll);
+                    let scrollbar_area = Rect::new(demand_area.x, demand_area.y + 1, demand_area.width, demand_area.height.saturating_sub(1));
+                    frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+                }
+            }
         }
 
         // ── GE feed (compact, above minimap) ─────────────────────────────
@@ -342,24 +457,8 @@ impl Component for Sidebar {
 
         // ── Minimap (selected character, square area) ─────────────────────
         if has_minimap && let Some(ref ch) = sel_char {
-            // Compute height so the minimap is square in PIXEL space.
-            // Terminal characters are typically ~2× taller than wide, so a
-            // character-square area would be a tall rectangle in pixels.
-            let (fw, fh) = self.minimap.font_size();
-            let sq_h = if fw > 0 && fh > 0 {
-                // pixel_width = minimap_area.width * fw
-                // pixel_height = sq_h * fh
-                // square: pixel_width == pixel_height → sq_h = width * fw / fh
-                let sq_h_px = (minimap_area.width as u32 * fw as u32) / fh as u32;
-                (sq_h_px as u16).min(minimap_area.height)
-            } else {
-                // Fallback: use half of width as a 2:1 heuristic.
-                (minimap_area.width / 2).min(minimap_area.height)
-            };
-            let sq_h = sq_h.max(4);
-            // Stick to the bottom of the panel by offsetting y.
-            let sq_y = minimap_area.y + minimap_area.height.saturating_sub(sq_h);
-            let square_area = Rect::new(minimap_area.x, sq_y, minimap_area.width, sq_h);
+            // Space has already been allocated precisely in minimap_area.
+            let square_area = minimap_area;
 
             let map_block = Block::default()
                 .title(Span::styled(

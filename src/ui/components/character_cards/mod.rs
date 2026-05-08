@@ -1,7 +1,31 @@
 //! Character card grid component — 3-column layout of animated character status panels.
 //!
-//! Each card shows portrait, stats, skills, gear, minimap, and action history
-//! with a boot animation and activity-based border colors.
+//! Each card shows portrait, HP/XP/bag gauges, cooldown timer, skills grid,
+//! combat stats, equipment table, action history, and a goal/task line.  Cards
+//! are arranged in a [`N_COLS`]-column responsive grid that expands sections as
+//! vertical space permits.
+//!
+//! ## Boot animation
+//!
+//! When a character card first appears it runs a ~580 ms two-phase sequence:
+//!
+//! 1. **Border phase** (0–240 ms) — only the outer border is drawn; a
+//!    tachyonfx [`Glitch`] effect covers the full card area.
+//! 2. **Reveal phase** (240–580 ms) — individual content elements fade in at
+//!    pseudo-random offsets computed from the character name
+//!    (see [`element_reveal_ms`]).
+//!
+//! ## Border colours
+//!
+//! The card border colour reflects the character's `last_action`:
+//! Fighting → Red | Gathering → Green | Moving → Blue | Crafting → Yellow |
+//! Idle/selected → Cyan | Idle/unselected → DarkGray.
+//!
+//! The selected card additionally has an animated "shooting star" pulse drawn
+//! on top of its border via [`apply_animated_border`].
+//!
+//! [`Glitch`]: tachyonfx::fx::Glitch
+//! [`element_reveal_ms`]: animation::element_reveal_ms
 
 pub mod animation;
 pub mod card;
@@ -56,12 +80,16 @@ use crate::{
     ui::image_cache::{ProtocolCache, SharedImageCache},
 };
 
+/// Number of card columns in the grid.
 const N_COLS: usize = 3;
-/// Minimum card width to show the portrait sidebar.
+
+/// Minimum card width (in terminal columns) required to show the portrait sidebar.
 const PORTRAIT_MIN_WIDTH: u16 = 20;
-/// Portrait column width in terminal characters.
+
+/// Width of the portrait column in terminal characters.
 const PORTRAIT_COL_W: u16 = 7;
-/// Icon column width per slot.
+
+/// Width of the icon thumbnail column used in the stats, skills, and gear sub-panels.
 const ICON_COL_W: u16 = 3;
 
 /// Character card grid component — displays up to 6 characters in 3 columns.
@@ -100,6 +128,12 @@ pub struct CharacterCards {
 }
 
 impl CharacterCards {
+    /// Create a new [`CharacterCards`] component.
+    ///
+    /// - `game_state` — shared game state; the component takes a read lock
+    ///   on each render frame to snapshot character data.
+    /// - `image_cache` — shared image store used for portrait, item, stat,
+    ///   and skill icon downloads.
     pub fn new(game_state: Arc<RwLock<GameState>>, image_cache: SharedImageCache) -> Self {
         Self {
             command_tx: None,

@@ -9,36 +9,35 @@
 ░  ░  ░     ░      ░   ░ ░   ░       ▒ ░    ░      ░   ░ ░   ░       
       ░     ░  ░         ░           ░      ░  ░         ░           
                                                                     
-                       ▄▄▄█████▓ █    ██  ██▓               
-                       ▓  ██▒ ▓▒ ██  ▓██▒▓██▒               
-                       ▒ ▓██░ ▒░▓██  ▒██░▒██▒               
-                       ░ ▓██▓ ░ ▓▓█  ░██░░██░               
-                         ▒██▒ ░ ▒▒█████▓ ░██░               
-                         ▒ ░░   ░▒▓▒ ▒ ▒ ░▓                 
-                           ░    ░░▒░ ░ ░  ▒ ░               
-                         ░       ░░░ ░ ░  ▒ ░               
-                                   ░      ░                 
+                   ▄▄▄█████▓ █    ██  ██▓               
+                   ▓  ██▒ ▓▒ ██  ▓██▒▓██▒               
+                   ▒ ▓██░ ▒░▓██  ▒██░▒██▒               
+                   ░ ▓██▓ ░ ▓▓█  ░██░░██░               
+                     ▒██▒ ░ ▒▒█████▓ ░██░               
+                     ▒ ░░   ░▒▓▒ ▒ ▒ ░▓                 
+                       ░    ░░▒░ ░ ░  ▒ ░               
+                     ░       ░░░ ░ ░  ▒ ░               
+                               ░      ░                 
 ```
 
 # Sentient TUI
 
-A terminal user interface client for [ArtifactsMMO](https://artifactsmmo.com). Monitor and manage your characters in real-time with live game events, character stats, Grand Exchange feeds, world events, and an interactive minimap - all in your terminal.
+A terminal UI client for [ArtifactsMMO](https://artifactsmmo.com) that provides real-time monitoring and management of your bot characters. Built with [ratatui](https://ratatui.rs/), [tachyonfx](https://crates.io/crates/tachyonfx), and an async [Tokio](https://tokio.rs/) runtime, it connects directly to the game's WebSocket feed and REST API to surface live character state, economy data, world events, and map tiles — all in your terminal.
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| Real-time monitoring | Live character positions, levels, HP, gold, and active tasks via WebSocket |
-| Character cards | Grid layout showing each character's stats, equipment, skills, and current action with animated boot sequences |
-| Interactive minimap | 3x3 tile grid with sprite rendering, multi-layer support (overworld/underground/interior), and character portrait overlay |
-| Grand Exchange feed | Live buy/sell orders and transaction completions in the sidebar |
-| World events | Real-time alerts for spawning and despawning events |
-| Economy dashboard | Total gold and gold-per-hour tracking with periodic snapshots |
-| Action log | Footer log with color-coded events (combat, gathering, crafting, movement, tasks, banking, GE) |
-| Image caching | Automatic download and disk caching of character skins, item icons, and map tiles |
-| Performance | 60 FPS rendering with configurable tick rate; async tokio runtime for concurrent WebSocket and REST operations |
-| Boot animation | Glitch effect on startup with progressive content reveal |
-| Status indicators | WebSocket connection status, FPS counter, cooldown timers per character |
+| Real-time monitoring | Live character positions, levels, HP, gold, and active tasks via the official WebSocket |
+| Character cards | 3-column adaptive grid showing stats, equipment, skills, and current action with per-card boot animations |
+| Interactive minimap | 3×3 tile grid with sprite rendering, multi-layer support (overworld / underground / interior), and character portrait overlay |
+| Grand Exchange feed | Live buy/sell orders and transaction completions streamed to the sidebar |
+| World events | Real-time alerts for monster spawns and despawns |
+| Economy dashboard | Total gold across all characters with gold-per-hour rate tracking |
+| Action log | Colour-coded footer log covering combat, gathering, crafting, movement, tasks, banking, and GE activity |
+| Image caching | Automatic background download and on-disk caching of character skins, item icons, effect sprites, and map tiles |
+| Performance | 60 FPS rendering with configurable tick rate; semaphore-limited concurrent downloads; async Tokio runtime |
+| Boot animation | Per-card tachyonfx glitch effect on startup with staggered content reveal |
 
 ## Screenshots
 
@@ -46,29 +45,32 @@ A terminal user interface client for [ArtifactsMMO](https://artifactsmmo.com). M
 
 ## Prerequisites
 
-- **Rust toolchain** - Rust 2021 edition or later. Install from [rustup.rs](https://rustup.rs/).
-- **Terminal with image protocol support** - one of:
+- **Rust toolchain** — Rust 2024 edition (1.85+). Install from [rustup.rs](https://rustup.rs/).
+- **Terminal with image protocol support** — one of:
   - [Kitty](https://sw.kovidgoyal.net/kitty/) (recommended)
   - [iTerm2](https://iterm2.com/) (macOS)
-  - [WezTerm](https://wezfm.org/)
+  - [WezTerm](https://wezterm.org/)
   - [Konsole](https://konsole.kde.org/) (KDE)
-- **ArtifactsMMO account** - create an account at [artifactsmmo.com](https://artifactsmmo.com) and generate an API token.
+
+  All other terminals fall back to Unicode half-block rendering automatically.
+- **ArtifactsMMO account** — create one at [artifactsmmo.com](https://artifactsmmo.com) and generate an API token.
 
 ## Installation
 
 ### Pre-built binaries
 
-Download the latest pre-built binaries for **Linux**, **macOS**, and **Windows** from the [GitHub Releases](https://github.com/jaintp/sentient-tui/releases) page.
+Download the latest release for **Linux**, **macOS**, or **Windows** from the [GitHub Releases](https://github.com/jaintp/sentient-tui/releases) page.
 
-Archives include:
-- `sentient-tui-*-x86_64-unknown-linux-gnu.tar.gz` (Linux x86_64)
-- `sentient-tui-*-x86_64-apple-darwin.tar.gz` (macOS x86_64)
-- `sentient-tui-*-aarch64-apple-darwin.tar.gz` (macOS Apple Silicon)
-- `sentient-tui-*-x86_64-pc-windows-msvc.zip` (Windows x86_64)
+| Archive | Platform |
+|---------|----------|
+| `sentient-tui-*-x86_64-unknown-linux-gnu.tar.gz` | Linux x86_64 |
+| `sentient-tui-*-x86_64-apple-darwin.tar.gz` | macOS x86_64 |
+| `sentient-tui-*-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon |
+| `sentient-tui-*-x86_64-pc-windows-msvc.zip` | Windows x86_64 |
 
 ### Arch Linux
 
-An official `PKGBUILD` is provided in the root of the repository. You can build it using `makepkg`:
+A `PKGBUILD` is provided in the repository root:
 
 ```bash
 git clone https://github.com/jaintp/sentient-tui.git
@@ -76,63 +78,49 @@ cd sentient-tui
 makepkg -si
 ```
 
-### From source (GitHub)
+### From source
 
 ```bash
 git clone https://github.com/jaintp/sentient-tui.git
 cd sentient-tui
 cargo build --release
+# Binary: target/release/sentient-tui
 ```
-
-The compiled binary will be at `target/release/sentient-tui`.
 
 ## Configuration
 
 ### API token
 
-The application requires an `ARTIFACTS_TOKEN` environment variable to connect to the ArtifactsMMO API.
-
-**Shell export:**
+`sentient-tui` requires an `ARTIFACTS_TOKEN` environment variable:
 
 ```bash
+# Shell export
 export ARTIFACTS_TOKEN="your-api-token-here"
 sentient-tui
+
+# Or inline
+ARTIFACTS_TOKEN=your-api-token-here sentient-tui
 ```
 
-**`.env` file** (automatically loaded from the working directory or any parent):
+A `.env` file in the working directory (or any parent) is loaded automatically:
 
-```
+```env
 ARTIFACTS_TOKEN=your-api-token-here
 ```
 
-**`.envrc` with [direnv](https://direnv.net/):**
+### Optional: local bot API overrides
 
-```bash
-export ARTIFACTS_TOKEN="your-api-token-here"
-```
-
-```bash
-direnv allow
-sentient-tui
-```
-
-### Local Bot API Overrides (Optional)
-
-If you are running your own local bot API servers (e.g. Sentient Artifacts `artirust`), you can configure `sentient-tui` to fetch character and map data from your local servers instead of the official `api.artifactsmmo.com` REST API. The live game event feed will still be routed from the official WebSocket to display accurate global notifications.
-
-Add the following to your `.env` file or export them in your shell:
+If you are running local bot servers (e.g. `artirust`), you can route character and map data through them instead of the official REST API. The live WebSocket feed is always sourced from the official endpoint.
 
 ```env
-# URL for the bot Control API (provides swarm status and character state)
+# Bot Control API — provides swarm status and character state
 BOT_CONTROL_API_URL=http://127.0.0.1:8001
 
-# URL for the bot Sync API (provides map data and cached image assets)
+# Bot Sync API — provides map data and cached image assets
 BOT_SYNC_API_URL=http://127.0.0.1:8002
 ```
 
 ### Config directory
-
-Application configuration is stored in platform-specific directories:
 
 | Platform | Path |
 |----------|------|
@@ -158,10 +146,10 @@ ARTIFACTS_TOKEN=your-token sentient-tui
 The loading screen runs while the application:
 1. Fetches character data via REST (`GET /my/characters`)
 2. Fetches map tiles via REST (`GET /maps`, paginated)
-3. Downloads all tile sprites to the image cache
-4. Establishes the WebSocket connection
+3. Downloads tile sprites to the image cache in the background
+4. Establishes the WebSocket connection to `wss://realtime.artifactsmmo.com`
 
-The main view loads once all three complete.
+The main view appears once all four steps complete.
 
 ### Layout
 
@@ -169,51 +157,47 @@ The main view loads once all three complete.
 +-------------------------------------+-------------+
 |   Character Cards Grid (80%)        |  Sidebar    |
 |                                     |  (20%)      |
-|  [Card] [Card] [Card] ...           | - Status    |
-|  [Card] [Card] [Card] ...           | - Economy   |
-|  [Card] [Card] [Card] ...           | - Events    |
-|                                     | - GE Feed   |
-|                                     | - Minimap   |
+|  [Card] [Card] [Card]               |  Status     |
+|  [Card] [Card] [Card]               |  Economy    |
+|                                     |  Events     |
+|                                     |  GE Feed    |
+|                                     |  Minimap    |
 +-------------------------------------+-------------+
 | Action Log (15%)                                  |
-| [SYS] system messages                             |
-| [FIGHT] combat | [GATHER] gathering               |
-| [CRAFT] crafting | [GE] grand exchange            |
+| [SYS]    system messages                          |
+| [FIGHT]  combat  |  [GATHER]  gathering           |
+| [CRAFT]  crafting  |  [GE]  grand exchange        |
 +---------------------------------------------------+
 ```
 
-**Character cards** display:
-- Character name, level, and skin portrait
-- HP/Max HP progress bar
-- XP progress bar
-- Current action (fight, gather, craft, move, rest, task)
-- Active cooldown timer
-- Equipped items with icons (weapon, armor, accessories, utilities)
-- Skill levels
+**Character cards** adapt to available height and display (tallest-first):
+- Character name, level, position, and gold
+- HP / XP / Bag capacity / Cooldown progress bars
+- Character skin portrait (when terminal supports image rendering)
+- Skills grid with XP gauges
+- Combat stats (attack, damage, resistances)
+- Equipment table with item icon thumbnails
+- Recent action history
+- Current task / goal line
 
-**Sidebar** (top to bottom):
-- WebSocket status indicator (connected / connecting / disconnected)
-- Economy: total gold across all characters and gold-per-hour rate
-- World events: active spawned events (up to 3)
-- Grand Exchange feed: recent orders and completed transactions
-- Minimap: 3x3 tile grid centered on the selected character
+**Sidebar** (top to bottom): WebSocket status, economy summary, active world events, Grand Exchange feed, minimap.
 
-**Footer log** color codes:
+**Footer log** colour codes:
 
-| Tag | Color | Event type |
-|-----|-------|------------|
-| `[SYS]` | Blue | System messages (WebSocket connect/disconnect) |
+| Tag | Colour | Event type |
+|-----|--------|------------|
+| `[SYS]` | Blue | System messages (WebSocket lifecycle) |
 | `[FIGHT]` | Red | Combat actions |
 | `[GATHER]` | Green | Gathering actions |
 | `[CRAFT]` | Yellow | Crafting actions |
 | `[MOVE]` | Cyan | Movement |
-| `[REST]` | Blue | Rest/sleep |
+| `[REST]` | Blue | Rest / sleep |
 | `[TASK+]` / `[TASK✓]` | Magenta | New task / completed task |
 | `[GE]` | Cyan/Yellow | Grand Exchange orders and transactions |
 | `[BANK]` | Gray | Bank deposits and withdrawals |
-| `[ACHV]` | Light Yellow | Achievements unlocked |
-| `[EVT+]` / `[EVT-]` | Green/Gray | Event spawn / despawn |
-| `[IMG↓]` / `[IMG✓]` / `[IMG✗]` | Cyan/Green/Red | Image download status |
+| `[ACHV]` | Light Yellow | Achievement unlocked |
+| `[EVT+]` / `[EVT-]` | Green / Gray | Event spawn / despawn |
+| `[IMG↓]` / `[IMG✓]` / `[IMG✗]` | Cyan / Green / Red | Image download status |
 
 ### Command-line options
 
@@ -223,9 +207,9 @@ sentient-tui --help
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--tick-rate FLOAT` | `4.0` | Game tick rate in ticks per second |
-| `--frame-rate FLOAT` | `60.0` | Render frame rate in frames per second |
-| `--refresh-cache` | off | Wipe the local image cache before starting |
+| `--tick-rate FLOAT` | `4.0` | Game logic tick rate in Hz |
+| `--frame-rate FLOAT` | `60.0` | Render frame rate in FPS |
+| `--refresh-cache` | off | Wipe the on-disk image cache before starting |
 
 Example:
 
@@ -238,121 +222,114 @@ ARTIFACTS_TOKEN=your-token sentient-tui --tick-rate 2.0 --frame-rate 30.0
 | Key | Action | Description |
 |-----|--------|-------------|
 | `q` | Quit | Exit the application |
-| `j` / `Down` / `Tab` | FocusNext | Select next character |
-| `k` / `Up` / `Shift+Tab` | FocusPrev | Select previous character |
-| `l` | ToggleLog | Show/hide the footer log panel |
+| `j` / `↓` / `Tab` | FocusNext | Select next character card |
+| `k` / `↑` / `Shift+Tab` | FocusPrev | Select previous character card |
+| `l` | ToggleLog | Show / hide the footer log panel |
 
-Keybindings are customizable via the config file. See [Config directory](#config-directory) for platform-specific paths.
+Keybindings are configurable via the config file. See [Config directory](#config-directory) for platform-specific paths.
 
 ## Architecture
 
 ### Overview
 
-The application uses an async, action-bus-driven architecture on top of tokio and ratatui:
+The application uses an event-driven, action-bus architecture on top of Tokio and ratatui:
 
 ```
-+-----------------------------------------------------+
-| WebSocket Listener                                  |
-| (realtime.artifactsmmo.com, background task)        |
-| Emits: account_log, online_characters, events, ...  |
-+--------------------+--------------------------------+
-                     |
-                     v
-             mpsc Action Channel
-                     |
-            +--------v---------+
-            |  Main App Loop   |
-            | - Event handling |
-            | - Action routing |
-            | - UI rendering   |
-            +--------+---------+
-                     |
-       +-------------+-------------+
-       |             |             |
-       v             v             v
-  GameState     Image Cache    Ratatui Frame
-  Arc<RwLock>   (async dl +    (terminal
-  characters    disk cache)     rendering)
-  map tiles
-  events/log
+┌──────────────────────────────────────────────────────┐
+│  WebSocket Listener (background Tokio task)          │
+│  wss://realtime.artifactsmmo.com                     │
+│  → AccountLog, OnlineCharacters, EventSpawn, …       │
+└────────────────────────┬─────────────────────────────┘
+                         │ mpsc::UnboundedSender<Action>
+                         ▼
+              ┌──────────────────────┐
+              │     App (main loop)  │
+              │  handle_events()     │
+              │  handle_actions()    │
+              │  render()            │
+              └────────┬─────────────┘
+           ┌───────────┼───────────┐
+           ▼           ▼           ▼
+      GameState    ImageCache   Ratatui Frame
+    Arc<RwLock>  Arc<Mutex>    (terminal output)
+    characters   HTTP + disk
+    map tiles    cache
+    events, log
 
-+-----------------------------------------------------+
-| REST Client (one-shot fetches on startup)           |
-| - GET /my/characters                                |
-| - GET /maps (paginated)                             |
-+-----------------------------------------------------+
+┌──────────────────────────────────────────────────────┐
+│  REST Client (one-shot on startup)                   │
+│  GET /my/characters   GET /maps (paginated)          │
+└──────────────────────────────────────────────────────┘
 ```
 
-### Core components
+### Key modules
 
-| Component | File | Responsibility |
-|-----------|------|----------------|
-| `GameState` | `src/core/game/state.rs` | Central shared state (characters, map, events, log) wrapped in `Arc<RwLock<>>` |
-| `App` | `src/app.rs` | Main event loop, action routing, mode transitions (Loading -> Home) |
-| `CharacterCards` | `src/ui/components/character_cards/` | Character card grid with boot animation |
+| Module | File | Responsibility |
+|--------|------|----------------|
+| `App` | `src/app.rs` | Main event loop, action routing, mode transitions (Loading → Home) |
+| `GameState` | `src/core/game/state.rs` | Central shared state (characters, map tiles, events, log) in `Arc<RwLock<>>` |
+| `CharacterCards` | `src/ui/components/character_cards/` | Animated character card grid |
 | `Sidebar` | `src/ui/components/sidebar.rs` | Status, economy, events, GE feed, minimap |
-| `LogPanel` | `src/ui/components/log_panel.rs` | Scrollable action log |
-| `LoadingScreen` | `src/ui/components/loading_screen.rs` | Boot animation with progress gauge |
-| `ImageCache` | `src/ui/image_cache.rs` | Async download + disk cache for sprites |
-| `MinimapCache` | `src/ui/minimap.rs` | 3x3 tile grid renderer with per-slot StatefulProtocol |
+| `LogPanel` | `src/ui/components/log_panel.rs` | Scrollable action log with per-entry glitch effect |
+| `LoadingScreen` | `src/ui/components/loading_screen.rs` | Boot splash with image-download progress gauge |
+| `ImageCache` | `src/ui/image_cache.rs` | Semaphore-limited async downloads + on-disk cache |
+| `MinimapCache` | `src/ui/minimap.rs` | 3×3 tile-sprite renderer with per-slot `StatefulProtocol` |
 | `network` | `src/api/network.rs` | WebSocket listener with auto-reconnect and ping keepalive |
 | `rest` | `src/api/rest.rs` | One-shot REST fetches for characters and map tiles |
 
 ### Action bus
 
-All inputs, WebSocket messages, and internal updates route through a single `mpsc` channel. Key action types:
+All inputs, WebSocket messages, and internal state changes route through a single `mpsc::UnboundedChannel<Action>`. Key action categories:
 
 | Category | Actions |
 |----------|---------|
 | Lifecycle | `Tick`, `Render`, `Quit`, `Suspend`, `Resume` |
-| WebSocket | `WsConnected`, `WsDisconnected`, `WsReconnect` |
+| WebSocket | `WsConnected`, `WsDisconnected`, `WsConnect` |
 | REST | `CharactersFetched`, `MapsFetched` |
 | Game events | `AccountLog`, `OnlineCharacters`, `EventSpawn`, `EventRemoved` |
 | Grand Exchange | `GEOrderCreated`, `GETransactionCompleted` |
 | Notifications | `AchievementUnlocked`, `Announcement` |
-| System | `SystemLog` (image download events) |
-
-Components implement a handler trait to process actions before they reach the main loop, enabling UI-local state updates (scroll position, selection state, etc.).
+| System | `SystemLog` (image download progress) |
 
 ## Cache
 
 ### Image cache
 
-All downloaded sprites land at:
+Downloaded sprites are stored at:
 
 ```
 ~/.cache/sentient-tui/images/{category}/{code}.png
 ```
 
-| Category | Source |
-|----------|--------|
+| Category | Content |
+|----------|---------|
 | `characters` | Character skin portraits |
-| `items` | Equipment and inventory icons |
-| `monsters` | Monster icons (task display) |
-| `resources` | Resource icons (task display) |
+| `items` | Equipment and inventory item icons |
+| `effects` | Stat/effect icons used in the stats panel |
+| `skills` | Skill icons used in the skills panel |
 | `maps` | Map tile sprites for the minimap |
 
-Clear the cache to force a re-download:
+Force a full re-download:
 
 ```bash
 sentient-tui --refresh-cache
-```
-
-Or manually:
-
-```bash
+# Or manually:
 rm -rf ~/.cache/sentient-tui/images/
 ```
 
-### Logs
-
-Application logs are written to:
+### Application logs
 
 ```
-~/.local/share/sentient-tui/sentient-tui.log
+~/.local/share/sentient-tui/sentient-tui.log   # Linux
+~/Library/Logs/sentient-tui/sentient-tui.log   # macOS
+%APPDATA%\sentient-tui\sentient-tui.log         # Windows
 ```
 
-Path varies by OS; see [Config directory](#config-directory) for platform-specific locations.
+Control log verbosity:
+
+```bash
+export RUST_LOG=sentient_tui=debug
+```
 
 ## License
 
@@ -360,16 +337,16 @@ This project is licensed under the terms in the [LICENSE](LICENSE) file.
 
 ## Contributing
 
-Contributions are welcome. Open an issue or pull request on GitHub.
+Contributions are welcome. Please open an issue to discuss significant changes before submitting a pull request.
 
 ## Acknowledgments
 
-Special thanks to [Exabind](https://github.com/junkdog/exabind) project for the active component animation.
+- [Exabind](https://github.com/junkdog/exabind) — inspiration for the component animation system.
+- [tachyonfx](https://github.com/junkdog/tachyonfx) — the Rust TUI effects library powering the boot animations.
 
 ## Resources
 
-- [ArtifactsMMO](https://artifactsmmo.com) - official game site
-- [ArtifactsMMO API docs](https://docs.artifactsmmo.com) - REST and WebSocket documentation
-- [Ratatui](https://ratatui.rs/) - Rust TUI framework
-- [Tokio](https://tokio.rs/) - async runtime
-- [tachyonfx](https://crates.io/crates/tachyonfx) - Rust TUI framework
+- [ArtifactsMMO](https://artifactsmmo.com) — official game site
+- [ArtifactsMMO API docs](https://docs.artifactsmmo.com) — REST and WebSocket documentation
+- [Ratatui book](https://ratatui.rs/) — Rust TUI framework documentation
+- [Tokio](https://tokio.rs/) — async runtime
