@@ -115,7 +115,7 @@ impl MinimapCache {
         // Three equal rows.
         let row_areas = Layout::vertical(vec![Constraint::Fill(1); dim as usize]).split(area);
 
-        let mut center_cell = Rect::default();
+        // let mut center_cell = Rect::default();
 
         for (row_idx, dy) in (-RADIUS..=RADIUS).rev().enumerate() {
             // Three equal columns inside each row.
@@ -125,9 +125,9 @@ impl MinimapCache {
             for (col_idx, dx) in (-RADIUS..=RADIUS).enumerate() {
                 let cell = col_areas[col_idx];
                 let is_center = dx == 0 && dy == 0;
-                if is_center {
-                    center_cell = cell;
-                }
+                // if is_center {
+                //     center_cell = cell;
+                // }
 
                 let char_opt = if is_center {
                     Some(char_skin)
@@ -212,11 +212,13 @@ impl MinimapCache {
 
         if needs_rebuild {
             let Some(map_arc) = ImageCache::get_or_fetch(cache, "maps", skin) else {
-                // If the image is not ready, we still insert a "placeholder" slot 
+                // If the image is not ready, we still insert a "placeholder" slot
                 // so we don't keep trying to fetch every frame, but we mark it
                 // with needs_load so it can be rebuilt once is_ready is true.
                 if self.slots.get(&key).is_none() {
-                    let proto = self.picker.new_resize_protocol(image::DynamicImage::new_rgb8(1, 1));
+                    let proto = self
+                        .picker
+                        .new_resize_protocol(image::DynamicImage::new_rgb8(1, 1));
                     self.slots.insert(
                         key,
                         Slot {
@@ -327,7 +329,11 @@ fn draw_tile_block(tile: Option<&MapTile>, is_center: bool, frame: &mut Frame, c
             Paragraph::new(Line::from(Span::styled(
                 icon,
                 Style::default()
-                    .fg(if tile.is_none() { Color::DarkGray } else { Color::White })
+                    .fg(if tile.is_none() {
+                        Color::DarkGray
+                    } else {
+                        Color::White
+                    })
                     .add_modifier(Modifier::BOLD),
             )))
             .alignment(Alignment::Center),
@@ -348,8 +354,7 @@ fn draw_tile_block(tile: Option<&MapTile>, is_center: bool, frame: &mut Frame, c
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
                     label,
-                    Style::default()
-                        .fg(Color::DarkGray),
+                    Style::default().fg(Color::DarkGray),
                 )))
                 .alignment(Alignment::Center),
                 code_area,

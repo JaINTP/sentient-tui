@@ -1,11 +1,11 @@
 {
   keybindings: {
     Home: {
-      "<q>": "Quit", // Quit the application
+      "<q>": "Quit",
       "<down>": "FocusNext",
       "<up>": "FocusPrev",
-      "<l>": "ToggleLog", // Toggle log panel
-      "<m>": "MaximizeCharacter", // Maximize character card
+      "<l>": "ToggleLog",
+      "<m>": "MaximizeCharacter"
     },
   },
 }

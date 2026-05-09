@@ -3,8 +3,6 @@
 //! Loads configuration from JSON5/YAML/TOML/INI files in the config directory.
 //! Provides keybinding parsing, style parsing, and directory path resolution.
 
-#![allow(dead_code)] // Remove this once you start using the code
-
 use std::{collections::HashMap, env, path::PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -67,7 +65,20 @@ impl Config {
     /// Searches for config files (JSON5, JSON, YAML, TOML, INI) in the config directory
     /// and merges them with built-in defaults. User config takes precedence.
     pub fn new() -> color_eyre::Result<Self, config::ConfigError> {
-        let default_config: Config = json5::from_str(CONFIG).unwrap();
+        // Two-step parse: json5 → serde_json::Value → Config.
+        // The json5 crate's Deserializer cannot handle mixed unit/data enum
+        // variants (Action) when driven by a strongly-typed Deserialize impl.
+        // Materialising into a serde_json::Value first works because Value uses
+        // deserialize_any, which json5 handles correctly. serde_json then does
+        // the typed Config deserialization with full enum support.
+        let json_value: serde_json::Value = json5::from_str(CONFIG).map_err(|e| {
+            config::ConfigError::Message(format!("Failed to parse embedded default config: {e}"))
+        })?;
+        let default_config: Config = serde_json::from_value(json_value).map_err(|e| {
+            config::ConfigError::Message(format!(
+                "Failed to deserialise embedded default config: {e}"
+            ))
+        })?;
         let data_dir = get_data_dir();
         let config_dir = get_config_dir();
         let mut builder = config::Config::builder()
@@ -103,7 +114,6 @@ impl Config {
         if let Ok(url) = std::env::var("BOT_SYNC_API_URL") {
             cfg.config.bot_sync_api_url = Some(url);
         }
-
 
         for (mode, default_bindings) in default_config.keybindings.0.iter() {
             let user_bindings = cfg
@@ -177,7 +187,28 @@ impl<'de> Deserialize<'de> for KeyBindings {
     where
         D: Deserializer<'de>,
     {
-        let parsed_map = HashMap::<Mode, HashMap<String, Action>>::deserialize(deserializer)?;
+        // Deserialize action values as raw JSON values first, then convert to
+        // `Action` via serde_json.  The json5 crate cannot deserialize a
+        // mixed-variant enum (unit + tuple variants) from a plain string — it
+        // bails with "expected a string or an object".  serde_json handles the
+        // externally-tagged representation correctly for all Action variants.
+        let raw_map =
+            HashMap::<Mode, HashMap<String, serde_json::Value>>::deserialize(deserializer)?;
+
+        let parsed_map: HashMap<Mode, HashMap<String, Action>> = raw_map
+            .into_iter()
+            .map(|(mode, inner)| {
+                let converted = inner
+                    .into_iter()
+                    .map(|(key, val)| {
+                        let action =
+                            serde_json::from_value(val).map_err(serde::de::Error::custom)?;
+                        Ok((key, action))
+                    })
+                    .collect::<color_eyre::Result<HashMap<String, Action>, D::Error>>()?;
+                Ok((mode, converted))
+            })
+            .collect::<color_eyre::Result<_, D::Error>>()?;
 
         let keybindings = parsed_map
             .into_iter()
