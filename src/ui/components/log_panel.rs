@@ -43,7 +43,7 @@ pub struct LogPanel {
     /// Shared game state — read to get log entries.
     game_state: Arc<RwLock<GameState>>,
     /// Panel visibility flag (can be toggled).
-    visible: bool,
+    pub visible: bool,
     /// Milliseconds remaining on the newest-entry glitch effect (0 = inactive).
     glitch_timer_ms: u32,
     /// Glitch effect manager for per-entry arrivals.

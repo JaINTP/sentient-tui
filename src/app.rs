@@ -347,7 +347,11 @@ impl App {
                 Action::ClearScreen => tui.terminal.clear()?,
                 Action::Resize(w, h) => self.handle_resize(tui, *w, *h)?,
                 Action::Render => self.render(tui)?,
-
+                Action::MaximizeCharacter => {
+                    let _ = self
+                        .character_cards
+                        .update(action.clone());
+                }
                 // ── WebSocket status ───────────────────────────────────────
                 Action::WsConnected => {
                     let mut gs = self.game_state.write().unwrap();
@@ -577,25 +581,29 @@ impl App {
                 return;
             }
 
-            // ── Top-level split: [main 85%] / [footer 15%] ───────────────
+            // ── Top-level split: [main 85%] / [sidebar 15%] ───────────────
             let [
                 main_area,
-                footer_area,
-            ] = Layout::vertical([
-                Constraint::Percentage(85),
-                Constraint::Percentage(15),
-            ])
-            .areas(area);
-
-            // ── Main: [character grid 80%] | [sidebar 20%] ───────────────
-            let [
-                grid_area,
                 sidebar_area,
             ] = Layout::horizontal([
                 Constraint::Percentage(80),
                 Constraint::Percentage(20),
             ])
-            .areas(main_area);
+            .areas(area);
+
+            // ── Main: [character grid 80%] | [log 20%] ───────────────
+            let main_constraints = if self.log_panel.visible {
+                [
+                    Constraint::Min(0),
+                    Constraint::Percentage(20),
+                ]
+            } else {
+                [
+                    Constraint::Min(0),
+                    Constraint::Length(0),
+                ] // or just [Constraint::Min(0)]
+            };
+            let [grid_area, log_area] = Layout::vertical(main_constraints).areas(main_area);
 
             // Character grid
             if let Err(e) = self
@@ -612,8 +620,15 @@ impl App {
                     .action_tx
                     .send(Action::Error(format!("sidebar: {e}")));
             }
-            // Footer log
-            if let Err(e) = self.log_panel.draw(frame, footer_area) {
+            // Footer log - only draw if visible
+            if self.log_panel.visible {
+                if let Err(e) = self.log_panel.draw(frame, log_area) {
+                    let _ = self
+                        .action_tx
+                        .send(Action::Error(format!("log: {e}")));
+                }
+            }
+            if let Err(e) = self.log_panel.draw(frame, log_area) {
                 let _ = self
                     .action_tx
                     .send(Action::Error(format!("log: {e}")));

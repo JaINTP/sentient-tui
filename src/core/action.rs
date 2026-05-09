@@ -42,6 +42,8 @@ pub enum Action {
     FocusPrev,
     /// Toggle the footer log panel visibility.
     ToggleLog,
+    /// Toggle the selected character card maximize state.
+    MaximizeCharacter,
 
     // ── WebSocket lifecycle ──────────────────────────────────────────────────
     /// Attempt to connect to the WebSocket (triggered on disconnect).

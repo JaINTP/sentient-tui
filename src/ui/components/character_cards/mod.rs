@@ -115,6 +115,8 @@ pub struct CharacterCards {
     skill_icons: ProtocolCache,
     /// Index of currently selected character (0-based, for border highlighting).
     selected: usize,
+    /// Whether the selected character card is maximized.
+    pub maximized: bool,
 
     // ── Boot animation state ──────────────────────────────────────────────
     /// Timestamp when each character card first appeared (for boot animation timing).
@@ -145,6 +147,7 @@ impl CharacterCards {
             stat_icons: ProtocolCache::new(),
             skill_icons: ProtocolCache::new(),
             selected: 0,
+            maximized: false,
             card_born: HashMap::new(),
             card_glitch: HashMap::new(),
             last_render_tick: Instant::now(),
@@ -190,6 +193,9 @@ impl Component for CharacterCards {
                     .write()
                     .unwrap()
                     .selected_character = self.selected;
+            }
+            Action::MaximizeCharacter => {
+                self.maximized = !self.maximized;
             }
             _ => {}
         }
@@ -245,6 +251,51 @@ impl Component for CharacterCards {
             }
         }
 
+        let selected_idx = self
+            .selected
+            .min(characters.len().saturating_sub(1));
+
+        let char = &characters[selected_idx];
+
+        let cd_rem = cooldown_expires
+            .get(&char.name)
+            .map(|exp| {
+                let now = Instant::now();
+                if *exp > now {
+                    (*exp - now).as_secs_f64()
+                } else {
+                    0.0
+                }
+            })
+            .unwrap_or(0.0);
+        let cd_tot = cooldown_totals
+            .get(&char.name)
+            .copied()
+            .unwrap_or(1.0)
+            .max(1.0);
+
+        if self.maximized {
+            // bypass grid logic entirely
+            let elapsed_ms = self
+                .card_born
+                .get(&char.name)
+                .map(|t| t.elapsed().as_millis() as u64)
+                .unwrap_or(u64::MAX);
+
+            let history = action_history
+                .get(&char.name)
+                .cloned()
+                .unwrap_or_default();
+
+            // draw just the one card using the FULL area
+            self.draw_card(
+                frame, area, char, &history, cd_rem, cd_tot, heartbeat, true, elapsed_ms,
+            );
+
+            // don't forget to apply the animated border to the full area too!
+            return Ok(());
+        }
+
         // ── Compute 3-column grid layout ──────────────────────────────────
         let n = characters.len();
         let n_rows = n.div_ceil(N_COLS);
@@ -285,22 +336,6 @@ impl Component for CharacterCards {
                 .get(&char.name)
                 .cloned()
                 .unwrap_or_default();
-            let cd_rem = cooldown_expires
-                .get(&char.name)
-                .map(|exp| {
-                    let now = Instant::now();
-                    if *exp > now {
-                        (*exp - now).as_secs_f64()
-                    } else {
-                        0.0
-                    }
-                })
-                .unwrap_or(0.0);
-            let cd_tot = cooldown_totals
-                .get(&char.name)
-                .copied()
-                .unwrap_or(1.0)
-                .max(1.0);
 
             self.draw_card(
                 frame,
