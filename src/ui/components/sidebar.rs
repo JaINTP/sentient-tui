@@ -27,7 +27,7 @@ use super::Component;
 use crate::{
     core::action::Action,
     core::config::Config,
-    core::game::{GEFeedEntry, GameState, WsStatus},
+    core::game::{FocusedPanel, GEFeedEntry, GameState, WsStatus},
     ui::components::character_cards::utils::normalise_code,
     ui::image_cache::{ImageCache, ProtocolCache, SharedImageCache},
     ui::minimap::MinimapCache,
@@ -64,6 +64,12 @@ pub struct Sidebar {
     demand_area: Rect,
     /// Total number of demands (to compute max scroll).
     demand_count: usize,
+    /// Current scroll offset for the GE feed (0 = most recent at bottom).
+    ge_scroll: usize,
+    /// Render area of the GE block (to detect scroll events).
+    ge_area: Rect,
+    /// Total number of GE entries (to compute max scroll).
+    ge_count: usize,
 }
 
 impl Sidebar {
@@ -92,6 +98,9 @@ impl Sidebar {
             demand_scroll: 0,
             demand_area: Rect::default(),
             demand_count: 0,
+            ge_scroll: 0,
+            ge_area: Rect::default(),
+            ge_count: 0,
         }
     }
 }
@@ -107,28 +116,68 @@ impl Component for Sidebar {
         Ok(())
     }
 
-    fn handle_mouse_event(&mut self, mouse: MouseEvent) -> color_eyre::Result<Option<Action>> {
-        let inside = mouse.column >= self.demand_area.x
-            && mouse.column < self.demand_area.x + self.demand_area.width
-            && mouse.row >= self.demand_area.y
-            && mouse.row < self.demand_area.y + self.demand_area.height;
-            
-        if !inside {
+    fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
+        if self.game_state.read().unwrap().focused_panel != FocusedPanel::Sidebar {
             return Ok(None);
         }
-
-        match mouse.kind {
-            MouseEventKind::ScrollDown => {
-                let max_scroll = self.demand_count.saturating_sub(self.demand_area.height.saturating_sub(2) as usize);
-                self.demand_scroll = self.demand_scroll.saturating_add(1).min(max_scroll);
-                Ok(Some(Action::Tick)) // force redraw
+        match action {
+            Action::FocusNext => {
+                let max = self.demand_count.saturating_sub(
+                    self.demand_area.height.saturating_sub(2) as usize,
+                );
+                self.demand_scroll = self.demand_scroll.saturating_add(1).min(max);
             }
-            MouseEventKind::ScrollUp => {
+            Action::FocusPrev => {
                 self.demand_scroll = self.demand_scroll.saturating_sub(1);
-                Ok(Some(Action::Tick)) // force redraw
             }
-            _ => Ok(None),
+            _ => {}
         }
+        Ok(None)
+    }
+
+    fn handle_mouse_event(&mut self, mouse: MouseEvent) -> color_eyre::Result<Option<Action>> {
+        let in_rect = |r: Rect| {
+            mouse.column >= r.x
+                && mouse.column < r.x + r.width
+                && mouse.row >= r.y
+                && mouse.row < r.y + r.height
+        };
+
+        if in_rect(self.demand_area) {
+            match mouse.kind {
+                MouseEventKind::ScrollDown => {
+                    let max = self.demand_count.saturating_sub(
+                        self.demand_area.height.saturating_sub(2) as usize,
+                    );
+                    self.demand_scroll = self.demand_scroll.saturating_add(1).min(max);
+                    return Ok(Some(Action::Tick));
+                }
+                MouseEventKind::ScrollUp => {
+                    self.demand_scroll = self.demand_scroll.saturating_sub(1);
+                    return Ok(Some(Action::Tick));
+                }
+                _ => {}
+            }
+        }
+
+        if in_rect(self.ge_area) {
+            match mouse.kind {
+                MouseEventKind::ScrollDown => {
+                    self.ge_scroll = self.ge_scroll.saturating_sub(1);
+                    return Ok(Some(Action::Tick));
+                }
+                MouseEventKind::ScrollUp => {
+                    let max = self.ge_count.saturating_sub(
+                        self.ge_area.height.saturating_sub(1) as usize,
+                    );
+                    self.ge_scroll = self.ge_scroll.saturating_add(1).min(max);
+                    return Ok(Some(Action::Tick));
+                }
+                _ => {}
+            }
+        }
+
+        Ok(None)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> color_eyre::Result<()> {
@@ -138,10 +187,12 @@ impl Component for Sidebar {
 
         // ── Outer block ───────────────────────────────────────────────────
         let version = env!("CARGO_PKG_VERSION");
+        let focused = self.game_state.read().unwrap().focused_panel == FocusedPanel::Sidebar;
+        let border_color = if focused { Color::Cyan } else { Color::DarkGray };
         let block = Block::default()
             .title(format!(" Info v{} ", version))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
+            .border_style(Style::default().fg(border_color));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -216,12 +267,6 @@ impl Component for Sidebar {
 
         // Show minimap whenever we have a character and enough room (≥12 rows).
         let has_minimap = sel_char.is_some() && inner.height >= 12;
-        // Compact GE feed: only show when there's a minimap; a small fixed window.
-        let ge_rows: u16 = if has_minimap {
-            5
-        } else {
-            0
-        };
 
         // Compute minimap target height before layout to guarantee it gets space
         let sq_h = if has_minimap {
@@ -251,11 +296,11 @@ impl Component for Sidebar {
             } else {
                 0
             }),
-            if has_demand {
-                Constraint::Length((demand.len() as u16 + 1).min(26)) // max 15 items
+            Constraint::Length(if has_demand {
+                (demand.len() as u16 + 1).min(26)
             } else {
-                Constraint::Length(0)
-            },
+                2 // header + "None"
+            }),
             Constraint::Min(0),
             Constraint::Length(sq_h),
         ])
@@ -348,16 +393,22 @@ impl Component for Sidebar {
         self.demand_count = demand.len();
         self.demand_area = demand_area;
 
-        if has_demand && demand_area.height > 0 {
+        if demand_area.height > 0 {
             let demand_block = Block::default()
                 .title(Span::styled("Swarm Demand", Style::default().fg(Color::DarkGray)))
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(Color::DarkGray));
-
             let inner_area = demand_block.inner(demand_area);
             frame.render_widget(demand_block, demand_area);
 
-            if inner_area.height > 0 {
+            if !has_demand {
+                if inner_area.height > 0 {
+                    frame.render_widget(
+                        Paragraph::new("None").style(Style::default().fg(Color::DarkGray)),
+                        inner_area,
+                    );
+                }
+            } else if inner_area.height > 0 {
                 let visible_count = inner_area.height as usize;
                 
                 // Adjust scroll if terminal resizes
@@ -435,24 +486,53 @@ impl Component for Sidebar {
         }
 
         // ── GE feed (compact, above minimap) ─────────────────────────────
-        if ge_rows > 0 && ge_area.height > 0 {
-            let visible = ge_area.height as usize;
-            let items: Vec<ListItem> = ge_feed
-                .iter()
-                .rev()
-                .take(visible)
-                .map(|entry| ge_feed_item(entry, ge_area.width))
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
+        self.ge_count = ge_feed.len();
+        self.ge_area = ge_area;
 
+        if ge_area.height > 0 {
             let ge_block = Block::default()
                 .title(Span::styled("GE Feed", Style::default().fg(Color::DarkGray)))
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(Color::DarkGray));
+            let ge_inner = ge_block.inner(ge_area);
+            frame.render_widget(ge_block, ge_area);
 
-            frame.render_widget(List::new(items).block(ge_block), ge_area);
+            if ge_inner.height > 0 {
+                if ge_feed.is_empty() {
+                    frame.render_widget(
+                        Paragraph::new("None").style(Style::default().fg(Color::DarkGray)),
+                        ge_inner,
+                    );
+                } else {
+                    let visible = ge_inner.height as usize;
+                    let max_scroll = self.ge_count.saturating_sub(visible);
+                    self.ge_scroll = self.ge_scroll.min(max_scroll);
+
+                    let items: Vec<ListItem> = ge_feed
+                        .iter()
+                        .rev()
+                        .skip(self.ge_scroll)
+                        .take(visible)
+                        .map(|entry| ge_feed_item(entry, ge_inner.width.saturating_sub(if max_scroll > 0 { 1 } else { 0 })))
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
+
+                    frame.render_widget(List::new(items), ge_inner);
+
+                    if max_scroll > 0 {
+                        let scrollbar = Scrollbar::default()
+                            .orientation(ScrollbarOrientation::VerticalRight)
+                            .begin_symbol(Some("▲"))
+                            .end_symbol(Some("▼"));
+                        let mut scrollbar_state = ScrollbarState::default()
+                            .content_length(max_scroll)
+                            .position(self.ge_scroll);
+                        frame.render_stateful_widget(scrollbar, ge_inner, &mut scrollbar_state);
+                    }
+                }
+            }
         }
 
         // ── Minimap (selected character, square area) ─────────────────────

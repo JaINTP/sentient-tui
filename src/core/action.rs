@@ -42,6 +42,12 @@ pub enum Action {
     FocusPrev,
     /// Toggle the footer log panel visibility.
     ToggleLog,
+    /// Toggle log filtering to only show entries for the selected character.
+    FilterLog,
+    /// Advance keyboard focus to the next panel (CharGrid → Sidebar → LogPanel).
+    PanelNext,
+    /// Move keyboard focus to the previous panel.
+    PanelPrev,
     /// Toggle the selected character card maximize state.
     MaximizeCharacter,
 

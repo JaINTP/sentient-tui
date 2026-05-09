@@ -205,10 +205,6 @@ impl App {
             );
             rest::spawn_map_fetch(
                 token,
-                self.config
-                    .config
-                    .bot_sync_api_url
-                    .clone(),
                 self.action_tx.clone(),
                 Arc::clone(&self.game_state),
                 Arc::clone(&self.image_cache),
@@ -341,17 +337,35 @@ impl App {
                         }
                     }
                 }
+                Action::PanelNext => {
+                    let mut next = self.game_state.read().unwrap().focused_panel.next();
+                    if next == crate::core::game::FocusedPanel::LogPanel && !self.log_panel.visible {
+                        next = next.next();
+                    }
+                    self.game_state.write().unwrap().focused_panel = next;
+                }
+                Action::PanelPrev => {
+                    let mut prev = self.game_state.read().unwrap().focused_panel.prev();
+                    if prev == crate::core::game::FocusedPanel::LogPanel && !self.log_panel.visible {
+                        prev = prev.prev();
+                    }
+                    self.game_state.write().unwrap().focused_panel = prev;
+                }
+                Action::ToggleLog => {
+                    // If hiding the log while it has focus, bump focus to CharGrid.
+                    if self.log_panel.visible {
+                        let mut gs = self.game_state.write().unwrap();
+                        if gs.focused_panel == crate::core::game::FocusedPanel::LogPanel {
+                            gs.focused_panel = crate::core::game::FocusedPanel::CharGrid;
+                        }
+                    }
+                }
                 Action::Quit => self.should_quit = true,
                 Action::Suspend => self.should_suspend = true,
                 Action::Resume => self.should_suspend = false,
                 Action::ClearScreen => tui.terminal.clear()?,
                 Action::Resize(w, h) => self.handle_resize(tui, *w, *h)?,
                 Action::Render => self.render(tui)?,
-                Action::MaximizeCharacter => {
-                    let _ = self
-                        .character_cards
-                        .update(action.clone());
-                }
                 // ── WebSocket status ───────────────────────────────────────
                 Action::WsConnected => {
                     let mut gs = self.game_state.write().unwrap();

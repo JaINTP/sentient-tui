@@ -2,9 +2,12 @@
   keybindings: {
     Home: {
       "<q>": "Quit",
+      "<tab>": "PanelNext",
+      "<backtab>": "PanelPrev",
       "<down>": "FocusNext",
       "<up>": "FocusPrev",
       "<l>": "ToggleLog",
+      "<f>": "FilterLog",
       "<m>": "MaximizeCharacter"
     },
   },

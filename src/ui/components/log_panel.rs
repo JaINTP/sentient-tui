@@ -8,12 +8,13 @@
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use crossterm::event::{MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem},
+    widgets::{Block, Borders, List, ListItem, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use tachyonfx::fx::Glitch;
 use tachyonfx::{Duration as FxDuration, Effect, EffectManager};
@@ -23,7 +24,7 @@ use super::Component;
 use crate::{
     core::action::Action,
     core::config::Config,
-    core::game::{GameState, LogEntry},
+    core::game::{FocusedPanel, GameState, LogEntry},
 };
 
 /// Duration the glitch effect runs on newly arrived entries (ms).
@@ -53,6 +54,16 @@ pub struct LogPanel {
     /// Log entry count from last draw — used to detect new arrivals.
     last_entry_count: usize,
 
+    // ── Filtering state ───────────────────────────────────────────────────
+    /// When true, only entries whose character matches the selected bot are shown.
+    pub filter_active: bool,
+
+    // ── Scroll state ──────────────────────────────────────────────────────
+    /// Rows scrolled back from the bottom (0 = pinned to most recent).
+    log_scroll: usize,
+    /// Last rendered area — stored so the mouse handler can check containment.
+    log_area: Rect,
+
     // ── Boot animation ────────────────────────────────────────────────────
     /// Timestamp of component creation — drives boot animation timing.
     boot_at: Instant,
@@ -61,10 +72,6 @@ pub struct LogPanel {
 }
 
 impl LogPanel {
-    /// Create a new [`LogPanel`] bound to `game_state`.
-    ///
-    /// The panel starts visible, with its boot animation beginning immediately.
-    /// Pass the shared [`GameState`] that is written by the WebSocket handler.
     pub fn new(game_state: Arc<RwLock<GameState>>) -> Self {
         let mut boot_glitch = EffectManager::default();
         boot_glitch.add_unique_effect(
@@ -86,22 +93,18 @@ impl LogPanel {
             fx_manager: EffectManager::default(),
             last_tick: Instant::now(),
             last_entry_count: 0,
+            filter_active: false,
+            log_scroll: 0,
+            log_area: Rect::default(),
             boot_at: Instant::now(),
             boot_glitch,
         }
     }
 
-    /// Return `true` if the panel is currently set to render.
-    ///
-    /// Toggled by [`Action::ToggleLog`].
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
-    /// Prime the per-entry glitch effect for the next [`GLITCH_DURATION_MS`] milliseconds.
-    ///
-    /// Called whenever new log entries arrive.  The glitch is applied only to
-    /// the bottom-most visible row (the most recently arrived entry).
     fn arm_glitch(&mut self) {
         self.glitch_timer_ms = GLITCH_DURATION_MS;
         let glitch = Glitch::builder()
@@ -125,9 +128,42 @@ impl Component for LogPanel {
         Ok(())
     }
 
+    fn handle_mouse_event(&mut self, mouse: MouseEvent) -> color_eyre::Result<Option<Action>> {
+        let inside = mouse.column >= self.log_area.x
+            && mouse.column < self.log_area.x + self.log_area.width
+            && mouse.row >= self.log_area.y
+            && mouse.row < self.log_area.y + self.log_area.height;
+        if !inside {
+            return Ok(None);
+        }
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                self.log_scroll = self.log_scroll.saturating_add(3);
+                Ok(Some(Action::Tick))
+            }
+            MouseEventKind::ScrollDown => {
+                self.log_scroll = self.log_scroll.saturating_sub(3);
+                Ok(Some(Action::Tick))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
-        if let Action::ToggleLog = action {
-            self.visible = !self.visible;
+        match action {
+            Action::ToggleLog => self.visible = !self.visible,
+            Action::FilterLog => self.filter_active = !self.filter_active,
+            Action::FocusNext => {
+                if self.game_state.read().unwrap().focused_panel == FocusedPanel::LogPanel {
+                    self.log_scroll = self.log_scroll.saturating_sub(1);
+                }
+            }
+            Action::FocusPrev => {
+                if self.game_state.read().unwrap().focused_panel == FocusedPanel::LogPanel {
+                    self.log_scroll = self.log_scroll.saturating_add(1);
+                }
+            }
+            _ => {}
         }
         Ok(None)
     }
@@ -137,18 +173,38 @@ impl Component for LogPanel {
             return Ok(());
         }
 
-        let boot_elapsed_ms = self.boot_at.elapsed().as_millis() as u64;
+        self.log_area = area;
 
-        // ── Timing delta (shared between boot and entry glitch) ───────────
+        let boot_elapsed_ms = self.boot_at.elapsed().as_millis() as u64;
         let elapsed = self.last_tick.elapsed();
         self.last_tick = Instant::now();
         let elapsed_ms = elapsed.as_millis() as u32;
 
-        // ── Block + inner ─────────────────────────────────────────────────
+        // ── Single snapshot read: entries + filter name + focus state ─────
+        let (entries, filter_name, focused) = {
+            let gs = self.game_state.read().unwrap();
+            let focused = gs.focused_panel == FocusedPanel::LogPanel;
+            let filter_name = if self.filter_active {
+                let idx = gs.selected_character.min(gs.characters.len().saturating_sub(1));
+                gs.characters.get(idx).map(|c| c.name.clone())
+            } else {
+                None
+            };
+            let entries: Vec<LogEntry> = gs.log_entries.iter().cloned().collect();
+            (entries, filter_name, focused)
+        };
+
+        // ── Build title and block ─────────────────────────────────────────
+        let title_text = match filter_name.as_deref() {
+            Some(name) => format!(" Log — {name} [L/F] "),
+            None if self.filter_active => " Log [L/F] ".to_string(),
+            _ => " Log [L] [F] ".to_string(),
+        };
+        let border_color = if focused { Color::Cyan } else { Color::DarkGray };
         let block = Block::default()
-            .title(Span::styled(" Log [L] ", Style::default().fg(Color::DarkGray)))
+            .title(Span::styled(title_text, Style::default().fg(Color::DarkGray)))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
+            .border_style(Style::default().fg(border_color));
         let inner = block.inner(area);
 
         // ── Phase 1: border-only flicker ──────────────────────────────────
@@ -162,36 +218,54 @@ impl Component for LogPanel {
             return Ok(());
         }
 
-        // ── Brief read snapshot ───────────────────────────────────────────
-        let entries: Vec<LogEntry> = {
-            let gs = self.game_state.read().unwrap();
-            gs.log_entries.iter().cloned().collect()
-        };
-
-        // Detect new arrivals to arm the per-entry glitch
+        // Detect new arrivals on the unfiltered total to arm the glitch.
         if entries.len() > self.last_entry_count {
             self.arm_glitch();
         }
         self.last_entry_count = entries.len();
 
-        // ── Build list items (most recent at bottom) ──────────────────────
+        // ── Scroll clamping ───────────────────────────────────────────────
+        let passes = |e: &&LogEntry| {
+            filter_name
+                .as_deref()
+                .map_or(true, |name| e.character.is_empty() || e.character == name)
+        };
+        let filtered_count = entries.iter().filter(passes).count();
         let visible_rows = inner.height as usize;
+        let max_scroll = filtered_count.saturating_sub(visible_rows);
+        self.log_scroll = self.log_scroll.min(max_scroll);
+
+        // Reserve one column for the scrollbar when it is visible.
+        let content_width = inner.width.saturating_sub(if max_scroll > 0 { 1 } else { 0 });
+
+        // ── Build list items (most recent at bottom) ──────────────────────
         let items: Vec<ListItem> = entries
             .iter()
             .rev()
+            .filter(passes)
+            .skip(self.log_scroll)
             .take(visible_rows)
             .collect::<Vec<_>>()
             .into_iter()
             .rev()
-            .map(|e| render_entry(e, inner.width))
+            .map(|e| render_entry(e, content_width))
             .collect();
 
         frame.render_widget(List::new(items).block(block), area);
 
-        // ── Boot phase 2: glitch on the same area as phase 1 ────────────────
-        // IMPORTANT: must use `area` (not `inner`) so stored cell_idx values
-        // from phase 1 are decoded against the same width and never produce
-        // y-offsets that land outside the terminal buffer.
+        // ── Scrollbar ─────────────────────────────────────────────────────
+        if max_scroll > 0 {
+            let scrollbar = Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("▲"))
+                .end_symbol(Some("▼"));
+            let mut scrollbar_state = ScrollbarState::default()
+                .content_length(max_scroll)
+                .position(self.log_scroll);
+            frame.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
+        }
+
+        // ── Boot phase 2 ──────────────────────────────────────────────────
         if boot_elapsed_ms < LOG_BOOT_TOTAL_MS && area.width > 0 && area.height > 0 {
             let dur = FxDuration::from_millis(elapsed_ms.max(1));
             self.boot_glitch
@@ -200,16 +274,15 @@ impl Component for LogPanel {
 
         // ── Per-entry glitch on the newest (bottom-most) visible line ─────
         if self.glitch_timer_ms > 0 && !entries.is_empty() {
-            let newest_y = inner.y + (visible_rows.min(entries.len()) as u16).saturating_sub(1);
+            let shown = filtered_count.min(visible_rows);
+            let newest_y = inner.y + (shown as u16).saturating_sub(1);
             if newest_y < inner.y + inner.height {
                 let row = Rect::new(inner.x, newest_y, inner.width, 1);
                 let dur = FxDuration::from_millis(elapsed_ms);
                 self.fx_manager
                     .process_effects(dur, frame.buffer_mut(), row);
             }
-            self.glitch_timer_ms = self
-                .glitch_timer_ms
-                .saturating_sub(elapsed_ms);
+            self.glitch_timer_ms = self.glitch_timer_ms.saturating_sub(elapsed_ms);
             if self.glitch_timer_ms == 0 {
                 self.fx_manager = EffectManager::default();
             }
@@ -221,11 +294,6 @@ impl Component for LogPanel {
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
-/// Convert a [`LogEntry`] to a coloured ratatui [`ListItem`].
-///
-/// Format: `<tag> <character>: <message>` where `tag` is bold and coloured
-/// according to [`LogEntry::tag_color`], the character name is bold white, and
-/// the message is grey.  The message is truncated to fit within `width`.
 fn render_entry(entry: &LogEntry, width: u16) -> ListItem<'static> {
     let tag = entry.tag;
     let tag_color = entry.tag_color;
@@ -254,7 +322,6 @@ fn render_entry(entry: &LogEntry, width: u16) -> ListItem<'static> {
     ListItem::new(line)
 }
 
-/// Truncate `s` to at most `max` Unicode scalar values, appending `…` if cut.
 fn truncate(s: &str, max: usize) -> String {
     if max == 0 {
         return String::new();

@@ -312,7 +312,7 @@ fn draw_tile_block(tile: Option<&MapTile>, is_center: bool, frame: &mut Frame, c
     }
 
     let (bg, icon, code_str): (Color, &str, &str) = match tile {
-        None => (Color::Rgb(15, 15, 25), "░", "UNMAPPED"),
+        None => (Color::Rgb(15, 15, 25), "", ""),
         Some(t) => (tile_color(t), content_icon(&t.content_type), t.content_code.as_str()),
     };
 

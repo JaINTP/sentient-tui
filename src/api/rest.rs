@@ -174,7 +174,6 @@ pub fn spawn_demand_poll(bot_control_url: String, tx: UnboundedSender<Action>) {
 /// ready before the minimap needs to render them.
 pub async fn fetch_all_maps(
     token: String,
-    bot_sync_url: Option<String>,
     tx: UnboundedSender<Action>,
     game_state: Arc<RwLock<GameState>>,
     image_cache: SharedImageCache,
@@ -187,7 +186,7 @@ pub async fn fetch_all_maps(
         }
     };
 
-    let base = bot_sync_url.unwrap_or_else(|| BASE_URL.to_string());
+    let base = BASE_URL;
     let mut page = 1u32;
     let page_size = 100u32;
     let mut total_fetched = 0usize;
@@ -337,13 +336,12 @@ pub async fn fetch_all_maps(
 /// Spawn a one-shot tokio task for the map fetch.
 pub fn spawn_map_fetch(
     token: String,
-    bot_sync_url: Option<String>,
     tx: UnboundedSender<Action>,
     game_state: Arc<RwLock<GameState>>,
     image_cache: SharedImageCache,
 ) {
     tokio::spawn(async move {
-        fetch_all_maps(token, bot_sync_url, tx, game_state, image_cache).await;
+        fetch_all_maps(token, tx, game_state, image_cache).await;
     });
 }
 

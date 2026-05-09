@@ -76,7 +76,7 @@ use super::Component;
 use crate::{
     core::action::Action,
     core::config::Config,
-    core::game::GameState,
+    core::game::{FocusedPanel, GameState},
     ui::image_cache::{ProtocolCache, SharedImageCache},
 };
 
@@ -170,29 +170,23 @@ impl Component for CharacterCards {
         match action {
             Action::FocusNext => {
                 let gs = self.game_state.read().unwrap();
-                if !gs.characters.is_empty() {
+                if gs.focused_panel == FocusedPanel::CharGrid && !gs.characters.is_empty() {
                     self.selected = (self.selected + 1) % gs.characters.len();
+                    drop(gs);
+                    self.game_state.write().unwrap().selected_character = self.selected;
                 }
-                drop(gs);
-                self.game_state
-                    .write()
-                    .unwrap()
-                    .selected_character = self.selected;
             }
             Action::FocusPrev => {
                 let gs = self.game_state.read().unwrap();
-                if !gs.characters.is_empty() {
+                if gs.focused_panel == FocusedPanel::CharGrid && !gs.characters.is_empty() {
                     self.selected = if self.selected == 0 {
                         gs.characters.len() - 1
                     } else {
                         self.selected - 1
                     };
+                    drop(gs);
+                    self.game_state.write().unwrap().selected_character = self.selected;
                 }
-                drop(gs);
-                self.game_state
-                    .write()
-                    .unwrap()
-                    .selected_character = self.selected;
             }
             Action::MaximizeCharacter => {
                 self.maximized = !self.maximized;

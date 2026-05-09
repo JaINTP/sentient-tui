@@ -29,12 +29,14 @@ A terminal UI client for [ArtifactsMMO](https://artifactsmmo.com) that provides 
 | Feature | Description |
 |---------|-------------|
 | Real-time monitoring | Live character positions, levels, HP, gold, and active tasks via the official WebSocket |
-| Character cards | 3-column adaptive grid showing stats, equipment, skills, and current action with per-card boot animations |
+| Character cards | 3-column adaptive grid showing stats, equipment, skills, and current action with per-card boot animations; press `m` to maximize selected card full-screen |
 | Interactive minimap | 3×3 tile grid with sprite rendering, multi-layer support (overworld / underground / interior), and character portrait overlay |
-| Grand Exchange feed | Live buy/sell orders and transaction completions streamed to the sidebar |
+| Grand Exchange feed | Live buy/sell orders and transaction completions streamed to the sidebar with scrollbar and mouse/keyboard navigation |
 | World events | Real-time alerts for monster spawns and despawns |
 | Economy dashboard | Total gold across all characters with gold-per-hour rate tracking |
-| Action log | Colour-coded footer log covering combat, gathering, crafting, movement, tasks, banking, and GE activity |
+| Action log | Colour-coded footer log covering combat, gathering, crafting, movement, tasks, banking, and GE activity; scrollable with keyboard and mouse wheel; filterable by selected character (`f`) |
+| Reactive sidebar | Each sidebar section (Demand, GE feed) collapses to a minimal "None" placeholder when empty and expands automatically as data arrives |
+| Panel focus cycling | `Tab` / `Shift+Tab` cycles keyboard focus between the character grid, sidebar, and log panel; focused panel highlighted in cyan |
 | Image caching | Automatic background download and on-disk caching of character skins, item icons, effect sprites, and map tiles |
 | Performance | 60 FPS rendering with configurable tick rate; semaphore-limited concurrent downloads; async Tokio runtime |
 | Boot animation | Per-card tachyonfx glitch effect on startup with staggered content reveal |
@@ -116,7 +118,8 @@ If you are running local bot servers (e.g. `artirust`), you can route character 
 # Bot Control API — provides swarm status and character state
 BOT_CONTROL_API_URL=http://127.0.0.1:8001
 
-# Bot Sync API — provides map data and cached image assets
+# Bot Sync API — routes cached image asset downloads (characters, items, effects, maps)
+# Map tile data is always fetched directly from the official ArtifactsMMO REST API.
 BOT_SYNC_API_URL=http://127.0.0.1:8002
 ```
 
@@ -180,7 +183,7 @@ The main view appears once all four steps complete.
 - Recent action history
 - Current task / goal line
 
-**Sidebar** (top to bottom): WebSocket status, economy summary, active world events, Grand Exchange feed, minimap.
+**Sidebar** (top to bottom): WebSocket status, economy summary, active world events, Grand Exchange feed, minimap. Each data section (Demand / GE feed) collapses to a single "None" line when empty and expands reactively as data arrives. Demand and GE feed are scrollable via mouse wheel or `↑`/`↓` when the sidebar has focus (`Tab` to focus).
 
 **Footer log** colour codes:
 
@@ -222,9 +225,15 @@ ARTIFACTS_TOKEN=your-token sentient-tui --tick-rate 2.0 --frame-rate 30.0
 | Key | Action | Description |
 |-----|--------|-------------|
 | `q` | Quit | Exit the application |
-| `j` / `↓` / `Tab` | FocusNext | Select next character card |
-| `k` / `↑` / `Shift+Tab` | FocusPrev | Select previous character card |
+| `Tab` | PanelNext | Cycle focus forward: character grid → sidebar → log panel |
+| `Shift+Tab` | PanelPrev | Cycle focus backward |
+| `↓` | FocusNext | Next character card (grid focus) / scroll down (sidebar or log focus) |
+| `↑` | FocusPrev | Previous character card (grid focus) / scroll up (sidebar or log focus) |
 | `l` | ToggleLog | Show / hide the footer log panel |
+| `f` | FilterLog | Toggle log filter — show only entries for the selected character |
+| `m` | MaximizeCharacter | Toggle full-screen view of the selected character card |
+
+Mouse wheel scrolling is supported in the Grand Exchange feed, Demand list, and log panel regardless of keyboard focus.
 
 Keybindings are configurable via the config file. See [Config directory](#config-directory) for platform-specific paths.
 
@@ -289,6 +298,8 @@ All inputs, WebSocket messages, and internal state changes route through a singl
 | Game events | `AccountLog`, `OnlineCharacters`, `EventSpawn`, `EventRemoved` |
 | Grand Exchange | `GEOrderCreated`, `GETransactionCompleted` |
 | Notifications | `AchievementUnlocked`, `Announcement` |
+| Navigation | `PanelNext`, `PanelPrev` (focus cycling), `FocusNext`, `FocusPrev` (item/scroll) |
+| UI | `ToggleLog`, `FilterLog`, `MaximizeCharacter` |
 | System | `SystemLog` (image download progress) |
 
 ## Cache

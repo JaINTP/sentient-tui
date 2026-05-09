@@ -628,6 +628,33 @@ pub struct MapTile {
     pub content_code: String,
 }
 
+/// Which top-level panel currently holds keyboard focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FocusedPanel {
+    #[default]
+    CharGrid,
+    Sidebar,
+    LogPanel,
+}
+
+impl FocusedPanel {
+    pub fn next(self) -> Self {
+        match self {
+            Self::CharGrid => Self::Sidebar,
+            Self::Sidebar  => Self::LogPanel,
+            Self::LogPanel => Self::CharGrid,
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        match self {
+            Self::CharGrid => Self::LogPanel,
+            Self::Sidebar  => Self::CharGrid,
+            Self::LogPanel => Self::Sidebar,
+        }
+    }
+}
+
 /// WebSocket connection status.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum WsStatus {
@@ -693,6 +720,8 @@ pub struct GameState {
     // UI selection
     /// Index of the currently selected character in `characters`.
     pub selected_character: usize,
+    /// Which top-level panel holds keyboard focus.
+    pub focused_panel: FocusedPanel,
 }
 
 impl Default for GameState {
@@ -712,6 +741,7 @@ impl Default for GameState {
             gold_snapshots: std::collections::VecDeque::new(),
             swarm_demand: Vec::new(),
             selected_character: 0,
+            focused_panel: FocusedPanel::default(),
         }
     }
 }
