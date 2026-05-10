@@ -338,18 +338,36 @@ impl App {
                     }
                 }
                 Action::PanelNext => {
-                    let mut next = self.game_state.read().unwrap().focused_panel.next();
-                    if next == crate::core::game::FocusedPanel::LogPanel && !self.log_panel.visible {
+                    let mut next = self
+                        .game_state
+                        .read()
+                        .unwrap()
+                        .focused_panel
+                        .next();
+                    if next == crate::core::game::FocusedPanel::LogPanel && !self.log_panel.visible
+                    {
                         next = next.next();
                     }
-                    self.game_state.write().unwrap().focused_panel = next;
+                    self.game_state
+                        .write()
+                        .unwrap()
+                        .focused_panel = next;
                 }
                 Action::PanelPrev => {
-                    let mut prev = self.game_state.read().unwrap().focused_panel.prev();
-                    if prev == crate::core::game::FocusedPanel::LogPanel && !self.log_panel.visible {
+                    let mut prev = self
+                        .game_state
+                        .read()
+                        .unwrap()
+                        .focused_panel
+                        .prev();
+                    if prev == crate::core::game::FocusedPanel::LogPanel && !self.log_panel.visible
+                    {
                         prev = prev.prev();
                     }
-                    self.game_state.write().unwrap().focused_panel = prev;
+                    self.game_state
+                        .write()
+                        .unwrap()
+                        .focused_panel = prev;
                 }
                 Action::ToggleLog => {
                     // If hiding the log while it has focus, bump focus to CharGrid.
@@ -472,17 +490,16 @@ impl App {
                 Action::GEOrderCreated(order) => {
                     let mut gs = self.game_state.write().unwrap();
                     push_ge_entry(&mut gs.ge_feed, GEFeedEntry::Order(order.clone()));
-                    let verb = if order.order_type == "sell" {
-                        "SELL"
-                    } else {
-                        "BUY "
-                    };
+                    let verb = order.order_type.to_uppercase();
                     push_log(
                         &mut gs.log_entries,
-                        "[GE]",
+                        "[GE ORDER]",
                         ratatui::style::Color::Cyan,
                         "",
-                        &format!("{verb} {} ×{}@{}g", order.code, order.quantity, order.price),
+                        &format!(
+                            "{verb} {:?}: {} × {} @ {}g",
+                            order.account, order.code, order.quantity, order.price
+                        ),
                     );
                 }
                 Action::GETransactionCompleted(txn) => {
@@ -495,10 +512,10 @@ impl App {
                     };
                     push_log(
                         &mut gs.log_entries,
-                        "[GE]",
+                        "[GE TRANSACTION]",
                         ratatui::style::Color::Yellow,
                         "",
-                        &format!("{verb} {} ×{}={}g", txn.code, txn.quantity, txn.total_price),
+                        &format!("{verb} {} × {} = {}g", txn.code, txn.quantity, txn.total_price),
                     );
                 }
 

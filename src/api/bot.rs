@@ -16,112 +16,127 @@
 //! | POST | `/bots/{name}/resume` | Resume a paused bot |
 //! | POST | `/bots/{name}/rest` | Force a bot to rest immediately |
 //! | GET | `/swarm/demand` | Retrieve the swarm demand board |
+//! | GET | `/bank` | Retrieve the bank details |
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-/// Lightweight bot snapshot returned by `GET /bots`.
-///
-/// Contains enough information to populate the character card grid without
-/// needing a full detail fetch.
+/// A single inventory slot as returned by the bot control server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventorySlot {
+    pub slot: u32,
+    pub code: String,
+    pub quantity: u32,
+}
+
+/// Bot snapshot returned by `GET /bots` and `GET /bots/{name}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotSummary {
-    /// Unique bot name (also used as the URL path segment).
     pub name: String,
-    /// Current character level.
+    pub status: String,
     pub level: u32,
-    /// Current hit points.
-    pub hp: i32,
-    /// Maximum hit points at full health.
-    pub max_hp: i32,
-    /// Map X coordinate.
-    pub x: i32,
-    /// Map Y coordinate.
-    pub y: i32,
-    /// Map layer the bot is currently on (e.g. `"overworld"`).
-    pub layer: String,
-    /// Human-readable description of the bot's active task, if any.
+    /// Formatted HP string, e.g. `"150/200"`.
+    pub hp: String,
+    pub hp_current: i32,
+    pub hp_max: i32,
+    /// Formatted XP string, e.g. `"3200/5000"`.
+    pub xp: String,
+    pub xp_current: u32,
+    pub xp_max: u32,
+    pub gold: u64,
+    /// Formatted position string, e.g. `"(2, -3)"`.
+    pub position: String,
     pub current_task: Option<String>,
-    /// Whether the bot is currently paused and awaiting a resume command.
+    pub goal_task: String,
+    pub queue_size: u32,
+    pub queue_eta_seconds: f32,
+    pub cooldown: f32,
+    pub inventory_count: usize,
+    pub inventory_max: u32,
+    pub skin: String,
+    pub inventory: Vec<InventorySlot>,
     pub paused: bool,
 }
 
-/// Aggregate status of the entire bot swarm returned by the control API.
+/// Aggregate swarm status returned by `GET /status`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SwarmStatus {
-    /// Total number of registered bots.
     pub bot_count: usize,
-    /// Total number of distinct item types currently held in the shared bank.
-    pub bank_items: usize,
-    /// Per-bot summaries.
-    pub bots: Vec<BotSummary>,
+    pub running_count: usize,
+    pub status: String,
+    pub summaries: Vec<BotSummary>,
+    pub bots: Vec<serde_json::Value>,
 }
 
-/// A single entry from the swarm's decision log.
+/// Bank details returned by `GET /bank`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BankDetails {
+    pub items: Vec<InventorySlot>,
+    pub total_gold: u64,
+}
+
+/// A single entry from the swarm's decision log (`GET /decision-monitor`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionEntry {
-    /// Bot name.
     pub name: String,
-    /// Human-readable description of the bot's current objective.
     pub current_goal: Option<String>,
-    /// `[x, y, layer]` position tuple as returned by the control API.
+    pub action: String,
+    pub reasoning: String,
+    /// `[x, y, layer]` position tuple.
     pub position: [serde_json::Value; 3],
-    /// Hit point percentage (0.0–100.0).
     pub hp_pct: f32,
-    /// Remaining cooldown in seconds.
     pub cooldown_remaining: u32,
-    /// Whether the bot is paused.
     pub paused: bool,
+    pub level: u32,
+    pub gold: u64,
+    pub skin: String,
+    pub inventory_count: usize,
+    pub inventory_max: u32,
 }
 
-/// Task specification payload for a manual command dispatch.
+/// Task specification payload for `POST /command`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandTaskSpec {
-    /// Action verb (e.g. `"move"`, `"fight"`, `"gather"`, `"craft"`).
     pub action: String,
-    /// Resource, monster, or item code targeted by the action.
     pub code: Option<String>,
-    /// Quantity for crafting or gathering actions.
     pub quantity: Option<u32>,
-    /// Destination X coordinate for movement actions.
     pub x: Option<i32>,
-    /// Destination Y coordinate for movement actions.
     pub y: Option<i32>,
+    pub slot: Option<String>,
 }
 
-/// Top-level request body sent to `POST /command`.
+/// Request body for `POST /command`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandRequest {
-    /// Name of the specific bot to command.  `None` broadcasts to all bots.
+    /// Name of the bot to command. `None` broadcasts to all bots.
     pub bot_name: Option<String>,
-    /// Task to execute.
     pub task: CommandTaskSpec,
 }
 
-/// Fetch the lightweight summary of all registered bots from `GET /bots`.
-///
-/// # Errors
-///
-/// Returns a [`reqwest::Error`] if the request fails or the server returns a
-/// non-2xx status code.
+/// Wrapper for the `GET /bots` response envelope.
+#[derive(Deserialize)]
+struct BotsResponse {
+    bots: Vec<BotSummary>,
+}
+
+/// Fetch the summary list of all registered bots from `GET /bots`.
 pub async fn fetch_bot_summaries(
     client: &Client,
     control_url: &str,
 ) -> reqwest::Result<Vec<BotSummary>> {
     let url = format!("{}/bots", control_url.trim_end_matches('/'));
     let resp = client.get(&url).send().await?.error_for_status()?;
-    resp.json().await
+    let wrapped: BotsResponse = resp.json().await?;
+    Ok(wrapped.bots)
 }
 
-/// Fetch the full JSON detail object for a single bot from `GET /bots/{name}`.
+/// Fetch full detail for a single bot from `GET /bots/{name}`.
 ///
-/// Returns a raw [`serde_json::Value`] so callers can use
-/// [`CharacterState::apply_full_schema`] without duplicating schema definitions.
-///
-/// # Errors
-///
-/// Returns a [`reqwest::Error`] if the request fails, the bot name is not
-/// found (404), or the server returns a non-2xx status.
+/// Returns a normalized [`serde_json::Value`] suitable for use with
+/// [`CharacterState::apply_full_schema`]: field names that differ between the
+/// bot control server and the ArtifactsMMO REST schema are aliased so that
+/// `apply_char_node` macros find them (e.g. `hp_current` → `hp`,
+/// `hp_max` → `max_hp`, `xp_current` → `xp`, etc.).
 pub async fn fetch_bot_detail(
     client: &Client,
     control_url: &str,
@@ -129,17 +144,30 @@ pub async fn fetch_bot_detail(
 ) -> reqwest::Result<serde_json::Value> {
     let url = format!("{}/bots/{}", control_url.trim_end_matches('/'), name);
     let resp = client.get(&url).send().await?.error_for_status()?;
-    resp.json().await
+    let mut val: serde_json::Value = resp.json().await?;
+
+    // Normalize bot-server field names to match what apply_full_schema expects.
+    if let Some(obj) = val.as_object_mut() {
+        let aliases: &[(&str, &str)] = &[
+            ("hp_current", "hp"),
+            ("hp_max", "max_hp"),
+            ("xp_current", "xp"),
+            ("xp_max", "max_xp"),
+            ("inventory_max", "inventory_max_items"),
+        ];
+        for (src, dst) in aliases {
+            if !obj.contains_key(*dst) {
+                if let Some(v) = obj.get(*src).cloned() {
+                    obj.insert(dst.to_string(), v);
+                }
+            }
+        }
+    }
+
+    Ok(val)
 }
 
 /// Dispatch a manual task command to `POST /command`.
-///
-/// Use `req.bot_name = None` to broadcast the command to all bots in the swarm.
-///
-/// # Errors
-///
-/// Returns a [`reqwest::Error`] if the request fails or the server returns a
-/// non-2xx status code.
 pub async fn send_command(
     client: &Client,
     control_url: &str,
@@ -151,14 +179,6 @@ pub async fn send_command(
 }
 
 /// Pause a bot via `POST /bots/{name}/pause`.
-///
-/// The bot will finish its current action and then stop until
-/// [`resume_bot`] is called.
-///
-/// # Errors
-///
-/// Returns a [`reqwest::Error`] if the request fails or the server returns a
-/// non-2xx status code.
 pub async fn pause_bot(client: &Client, control_url: &str, name: &str) -> reqwest::Result<()> {
     let url = format!("{}/bots/{}/pause", control_url.trim_end_matches('/'), name);
     client.post(&url).send().await?.error_for_status()?;
@@ -166,48 +186,32 @@ pub async fn pause_bot(client: &Client, control_url: &str, name: &str) -> reqwes
 }
 
 /// Resume a paused bot via `POST /bots/{name}/resume`.
-///
-/// The bot will continue executing its task queue from where it left off.
-///
-/// # Errors
-///
-/// Returns a [`reqwest::Error`] if the request fails or the server returns a
-/// non-2xx status code.
 pub async fn resume_bot(client: &Client, control_url: &str, name: &str) -> reqwest::Result<()> {
     let url = format!("{}/bots/{}/resume", control_url.trim_end_matches('/'), name);
     client.post(&url).send().await?.error_for_status()?;
     Ok(())
 }
 
-/// Force a bot to immediately execute a rest action via `POST /bots/{name}/rest`.
-///
-/// Useful when a bot is low on HP and needs to recover before continuing.
-///
-/// # Errors
-///
-/// Returns a [`reqwest::Error`] if the request fails or the server returns a
-/// non-2xx status code.
+/// Force a bot to rest via `POST /bots/{name}/rest`.
 pub async fn rest_bot(client: &Client, control_url: &str, name: &str) -> reqwest::Result<()> {
     let url = format!("{}/bots/{}/rest", control_url.trim_end_matches('/'), name);
     client.post(&url).send().await?.error_for_status()?;
     Ok(())
 }
 
-/// Retrieve the swarm's current item demand board from `GET /swarm/demand`.
-///
-/// Returns a map of item code → required quantity, sorted by the REST layer
-/// before dispatch.  The UI sidebar displays this list to help coordinate
-/// manual bot tasking.
-///
-/// # Errors
-///
-/// Returns a [`reqwest::Error`] if the request fails or the server returns a
-/// non-2xx status code.
+/// Retrieve the swarm demand board from `GET /swarm/demand`.
 pub async fn fetch_swarm_demand(
     client: &Client,
     control_url: &str,
 ) -> reqwest::Result<std::collections::HashMap<String, u32>> {
     let url = format!("{}/swarm/demand", control_url.trim_end_matches('/'));
+    let resp = client.get(&url).send().await?.error_for_status()?;
+    resp.json().await
+}
+
+/// Retrieve bank contents from `GET /bank`.
+pub async fn fetch_bank(client: &Client, control_url: &str) -> reqwest::Result<BankDetails> {
+    let url = format!("{}/bank", control_url.trim_end_matches('/'));
     let resp = client.get(&url).send().await?.error_for_status()?;
     resp.json().await
 }
