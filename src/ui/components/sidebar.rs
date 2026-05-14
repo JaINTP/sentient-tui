@@ -174,6 +174,23 @@ impl Component for Sidebar {
                     self.demand_scroll = self.demand_scroll.saturating_sub(1);
                     return Ok(Some(Action::Tick));
                 }
+                MouseEventKind::Down(_) => {
+                    let inner_area = Block::default()
+                        .borders(Borders::TOP)
+                        .inner(self.demand_area);
+                    if mouse.row >= inner_area.y && mouse.row < inner_area.y + inner_area.height {
+                        let idx = (mouse.row - inner_area.y) as usize + self.demand_scroll;
+                        let demand = self
+                            .game_state
+                            .read()
+                            .unwrap()
+                            .swarm_demand
+                            .clone();
+                        if let Some((code, _)) = demand.get(idx) {
+                            return Ok(Some(Action::DismissDemand(code.clone())));
+                        }
+                    }
+                }
                 _ => {}
             }
         }

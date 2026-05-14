@@ -96,6 +96,9 @@ pub struct App {
     /// Cancellation token for the WebSocket listener task.
     ws_cancel: CancellationToken,
 
+    /// Shared HTTP client for REST requests.
+    client: reqwest::Client,
+
     /// Counter incremented on each `Action::Tick` — used for periodic tasks.
     tick_count: u64,
 }
@@ -140,6 +143,7 @@ impl App {
             game_state,
             image_cache,
             ws_cancel: CancellationToken::new(),
+            client: reqwest::Client::new(),
             tick_count: 0,
         })
     }
@@ -434,6 +438,34 @@ impl App {
                     let mut gs = self.game_state.write().unwrap();
                     gs.swarm_demand = demand.clone();
                 }
+                Action::DismissDemand(code) => {
+                    let client = self.client.clone();
+                    let url = self
+                        .config
+                        .config
+                        .bot_control_api_url
+                        .clone();
+                    let code = code.clone();
+                    let tx = self.action_tx.clone();
+                    tokio::spawn(async move {
+                        if let Some(control_url) = url {
+                            match crate::api::bot::dismiss_demand(&client, &control_url, &code)
+                                .await
+                            {
+                                Ok(_) => {
+                                    let _ = tx.send(Action::SystemLog {
+                                        tag: "[DEF]".to_string(),
+                                        message: format!("blacklisted {code}"),
+                                    });
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(Action::Error(format!("dismiss demand: {e}")));
+                                }
+                            }
+                        }
+                    });
+                }
+
                 Action::MapsFetched => {
                     self.maps_fetched = true;
                 }
@@ -895,7 +927,7 @@ fn log_type_tag(log_type: &str) -> (&'static str, ratatui::style::Color) {
         "task_completed" => ("[TASK✓] ", Color::Magenta),
         "new_task" => ("[TASK+] ", Color::Magenta),
         "task_exchange" | "task_cancelled" => ("[TASK]  ", Color::DarkGray),
-        "recycling" => ("[RECYCLE", Color::LightYellow),
+        "recycling" => ("[RECYCLE]", Color::LightYellow),
         "buy_ge" | "create_buy_order_ge" | "fill_buy_order_ge" => ("[GE BUY]", Color::Cyan),
         "sell_ge" => ("[GE SEL]", Color::LightRed),
         "deposit_item" | "deposit_gold" => ("[BANK↓] ", Color::Gray),

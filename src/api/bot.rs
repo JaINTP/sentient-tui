@@ -209,6 +209,26 @@ pub async fn fetch_swarm_demand(
 /// Retrieve bank contents from `GET /bank`.
 pub async fn fetch_bank(client: &Client, control_url: &str) -> reqwest::Result<BankDetails> {
     let url = format!("{}/bank", control_url.trim_end_matches('/'));
-    let resp = client.get(&url).send().await?.error_for_status()?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?;
     resp.json().await
+}
+
+/// Blacklist an item from automated demands via `POST /demand/ignore`.
+pub async fn dismiss_demand(
+    client: &Client,
+    control_url: &str,
+    item_code: &str,
+) -> reqwest::Result<()> {
+    let url = format!("{}/demand/ignore", control_url.trim_end_matches('/'));
+    client
+        .post(&url)
+        .json(&serde_json::json!({ "item_code": item_code }))
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
 }

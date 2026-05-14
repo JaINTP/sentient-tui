@@ -114,6 +114,9 @@ pub enum Action {
     /// Swarm demand fetched from the local Bot Control API.
     SwarmDemandFetched(Vec<(String, u32)>),
 
+    /// Blacklist an item from automated demands in the Bot Control API.
+    DismissDemand(String),
+
     // ── Debugging ────────────────────────────────────────────────────────────
     /// Raw WebSocket message (JSON string) for debugging purposes.
     RawWsMessage(String),
