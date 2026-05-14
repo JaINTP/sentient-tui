@@ -652,12 +652,12 @@ impl App {
                     .send(Action::Error(format!("sidebar: {e}")));
             }
             // Footer log - only draw if visible
-            if self.log_panel.visible {
-                if let Err(e) = self.log_panel.draw(frame, log_area) {
-                    let _ = self
-                        .action_tx
-                        .send(Action::Error(format!("log: {e}")));
-                }
+            if self.log_panel.visible
+                && let Err(e) = self.log_panel.draw(frame, log_area)
+            {
+                let _ = self
+                    .action_tx
+                    .send(Action::Error(format!("log: {e}")));
             }
             if let Err(e) = self.log_panel.draw(frame, log_area) {
                 let _ = self

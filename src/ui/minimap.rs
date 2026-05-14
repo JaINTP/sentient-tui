@@ -206,7 +206,7 @@ impl MinimapCache {
         // Rebuild when the skin or rendered cell area changes.
         // Also rebuild if the slot is a placeholder but the image is now ready.
         let is_ready = ImageCache::is_ready(cache, "maps", skin);
-        let needs_rebuild = self.slots.get(&key).map_or(true, |s| {
+        let needs_rebuild = self.slots.get(&key).is_none_or(|s| {
             s.skin != composite_skin || s.cell != area || (s.needs_load && is_ready)
         });
 
@@ -215,7 +215,7 @@ impl MinimapCache {
                 // If the image is not ready, we still insert a "placeholder" slot
                 // so we don't keep trying to fetch every frame, but we mark it
                 // with needs_load so it can be rebuilt once is_ready is true.
-                if self.slots.get(&key).is_none() {
+                if !self.slots.contains_key(&key) {
                     let proto = self
                         .picker
                         .new_resize_protocol(image::DynamicImage::new_rgb8(1, 1));
@@ -234,29 +234,28 @@ impl MinimapCache {
 
             let mut img = (*map_arc).clone();
 
-            if let Some(c_skin) = char_skin {
-                if !c_skin.is_empty() {
-                    // If character image isn't ready yet, defer drawing this frame
-                    let Some(char_arc) = ImageCache::get_or_fetch(cache, "characters", c_skin)
-                    else {
-                        return false;
-                    };
+            if let Some(c_skin) = char_skin
+                && !c_skin.is_empty()
+            {
+                // If character image isn't ready yet, defer drawing this frame
+                let Some(char_arc) = ImageCache::get_or_fetch(cache, "characters", c_skin) else {
+                    return false;
+                };
 
-                    let char_w = char_arc.width();
-                    let char_h = char_arc.height();
-                    let map_w = img.width();
-                    let map_h = img.height();
+                let char_w = char_arc.width();
+                let char_h = char_arc.height();
+                let map_w = img.width();
+                let map_h = img.height();
 
-                    let overlay_x = (map_w.saturating_sub(char_w)) / 2;
-                    let overlay_y = map_h.saturating_sub(char_h + (map_h / 5));
+                let overlay_x = (map_w.saturating_sub(char_w)) / 2;
+                let overlay_y = map_h.saturating_sub(char_h + (map_h / 5));
 
-                    image::imageops::overlay(
-                        &mut img,
-                        char_arc.as_ref(),
-                        overlay_x as i64,
-                        overlay_y as i64,
-                    );
-                }
+                image::imageops::overlay(
+                    &mut img,
+                    char_arc.as_ref(),
+                    overlay_x as i64,
+                    overlay_y as i64,
+                );
             }
 
             // Pre-resize the sprite to exactly fill the cell area in pixel space.

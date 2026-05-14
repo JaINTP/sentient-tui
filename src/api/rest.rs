@@ -21,7 +21,11 @@ const BASE_URL: &str = "https://api.artifactsmmo.com";
 // ── Characters ────────────────────────────────────────────────────────────────
 
 /// Fetch `GET /my/characters` and dispatch `Action::CharactersFetched`.
-pub async fn fetch_my_characters(token: String, bot_control_url: Option<String>, tx: UnboundedSender<Action>) {
+pub async fn fetch_my_characters(
+    token: String,
+    bot_control_url: Option<String>,
+    tx: UnboundedSender<Action>,
+) {
     let client = match build_client() {
         Ok(c) => c,
         Err(e) => {
@@ -36,7 +40,8 @@ pub async fn fetch_my_characters(token: String, bot_control_url: Option<String>,
             Ok(summaries) => {
                 let mut characters = Vec::with_capacity(summaries.len());
                 for sum in summaries {
-                    match crate::api::bot::fetch_bot_detail(&client, &control_url, &sum.name).await {
+                    match crate::api::bot::fetch_bot_detail(&client, &control_url, &sum.name).await
+                    {
                         Ok(detail) => {
                             let mut cs = CharacterState {
                                 name: sum.name.clone(),
@@ -60,8 +65,6 @@ pub async fn fetch_my_characters(token: String, bot_control_url: Option<String>,
 
     let url = format!("{BASE_URL}/my/characters");
     info!("REST: fetching {url}");
-
-
 
     let resp = client
         .get(&url)
@@ -133,7 +136,11 @@ pub async fn fetch_my_characters(token: String, bot_control_url: Option<String>,
 }
 
 /// Spawn a one-shot tokio task for the character fetch.
-pub fn spawn_character_fetch(token: String, bot_control_url: Option<String>, tx: UnboundedSender<Action>) {
+pub fn spawn_character_fetch(
+    token: String,
+    bot_control_url: Option<String>,
+    tx: UnboundedSender<Action>,
+) {
     tokio::spawn(async move {
         fetch_my_characters(token, bot_control_url, tx).await;
     });
@@ -360,10 +367,14 @@ fn build_client() -> reqwest::Result<reqwest::Client> {
 ///   B) `{ "data": [...], "pages": N, "total": T }` — flat (most endpoints)
 fn extract_page(json: &serde_json::Value) -> (Vec<serde_json::Value>, u32) {
     let data = json.get("data").unwrap_or(json);
-    
+
     // Determine total pages from top-level, meta, or data node
-    let pages = json.get("pages")
-        .or_else(|| json.get("meta").and_then(|m| m.get("pages")))
+    let pages = json
+        .get("pages")
+        .or_else(|| {
+            json.get("meta")
+                .and_then(|m| m.get("pages"))
+        })
         .or_else(|| data.get("pages"))
         .and_then(|v| v.as_u64())
         .unwrap_or(1) as u32;

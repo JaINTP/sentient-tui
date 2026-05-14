@@ -11,14 +11,16 @@
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use crossterm::event::{MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{
+        Block, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+    },
 };
-use crossterm::event::{MouseEvent, MouseEventKind};
 use tachyonfx::fx::Glitch;
 use tachyonfx::{Duration as FxDuration, Effect, EffectManager};
 use tokio::sync::mpsc::UnboundedSender;
@@ -117,15 +119,26 @@ impl Component for Sidebar {
     }
 
     fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
-        if self.game_state.read().unwrap().focused_panel != FocusedPanel::Sidebar {
+        if self
+            .game_state
+            .read()
+            .unwrap()
+            .focused_panel
+            != FocusedPanel::Sidebar
+        {
             return Ok(None);
         }
         match action {
             Action::FocusNext => {
                 let max = self.demand_count.saturating_sub(
-                    self.demand_area.height.saturating_sub(2) as usize,
+                    self.demand_area
+                        .height
+                        .saturating_sub(2) as usize,
                 );
-                self.demand_scroll = self.demand_scroll.saturating_add(1).min(max);
+                self.demand_scroll = self
+                    .demand_scroll
+                    .saturating_add(1)
+                    .min(max);
             }
             Action::FocusPrev => {
                 self.demand_scroll = self.demand_scroll.saturating_sub(1);
@@ -147,9 +160,14 @@ impl Component for Sidebar {
             match mouse.kind {
                 MouseEventKind::ScrollDown => {
                     let max = self.demand_count.saturating_sub(
-                        self.demand_area.height.saturating_sub(2) as usize,
+                        self.demand_area
+                            .height
+                            .saturating_sub(2) as usize,
                     );
-                    self.demand_scroll = self.demand_scroll.saturating_add(1).min(max);
+                    self.demand_scroll = self
+                        .demand_scroll
+                        .saturating_add(1)
+                        .min(max);
                     return Ok(Some(Action::Tick));
                 }
                 MouseEventKind::ScrollUp => {
@@ -167,10 +185,13 @@ impl Component for Sidebar {
                     return Ok(Some(Action::Tick));
                 }
                 MouseEventKind::ScrollUp => {
-                    let max = self.ge_count.saturating_sub(
-                        self.ge_area.height.saturating_sub(1) as usize,
-                    );
-                    self.ge_scroll = self.ge_scroll.saturating_add(1).min(max);
+                    let max = self
+                        .ge_count
+                        .saturating_sub(self.ge_area.height.saturating_sub(1) as usize);
+                    self.ge_scroll = self
+                        .ge_scroll
+                        .saturating_add(1)
+                        .min(max);
                     return Ok(Some(Action::Tick));
                 }
                 _ => {}
@@ -187,8 +208,17 @@ impl Component for Sidebar {
 
         // ── Outer block ───────────────────────────────────────────────────
         let version = env!("CARGO_PKG_VERSION");
-        let focused = self.game_state.read().unwrap().focused_panel == FocusedPanel::Sidebar;
-        let border_color = if focused { Color::Cyan } else { Color::DarkGray };
+        let focused = self
+            .game_state
+            .read()
+            .unwrap()
+            .focused_panel
+            == FocusedPanel::Sidebar;
+        let border_color = if focused {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        };
         let block = Block::default()
             .title(format!(" Info v{} ", version))
             .borders(Borders::ALL)
@@ -410,9 +440,11 @@ impl Component for Sidebar {
                 }
             } else if inner_area.height > 0 {
                 let visible_count = inner_area.height as usize;
-                
+
                 // Adjust scroll if terminal resizes
-                let max_scroll = self.demand_count.saturating_sub(visible_count);
+                let max_scroll = self
+                    .demand_count
+                    .saturating_sub(visible_count);
                 self.demand_scroll = self.demand_scroll.min(max_scroll);
 
                 let rows = Layout::vertical(
@@ -479,7 +511,12 @@ impl Component for Sidebar {
                     let mut scrollbar_state = ScrollbarState::default()
                         .content_length(max_scroll)
                         .position(self.demand_scroll);
-                    let scrollbar_area = Rect::new(demand_area.x, demand_area.y + 1, demand_area.width, demand_area.height.saturating_sub(1));
+                    let scrollbar_area = Rect::new(
+                        demand_area.x,
+                        demand_area.y + 1,
+                        demand_area.width,
+                        demand_area.height.saturating_sub(1),
+                    );
                     frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
                 }
             }
@@ -513,7 +550,18 @@ impl Component for Sidebar {
                         .rev()
                         .skip(self.ge_scroll)
                         .take(visible)
-                        .map(|entry| ge_feed_item(entry, ge_inner.width.saturating_sub(if max_scroll > 0 { 1 } else { 0 })))
+                        .map(|entry| {
+                            ge_feed_item(
+                                entry,
+                                ge_inner
+                                    .width
+                                    .saturating_sub(if max_scroll > 0 {
+                                        1
+                                    } else {
+                                        0
+                                    }),
+                            )
+                        })
                         .collect::<Vec<_>>()
                         .into_iter()
                         .rev()

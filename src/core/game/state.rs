@@ -641,7 +641,7 @@ impl FocusedPanel {
     pub fn next(self) -> Self {
         match self {
             Self::CharGrid => Self::Sidebar,
-            Self::Sidebar  => Self::LogPanel,
+            Self::Sidebar => Self::LogPanel,
             Self::LogPanel => Self::CharGrid,
         }
     }
@@ -649,7 +649,7 @@ impl FocusedPanel {
     pub fn prev(self) -> Self {
         match self {
             Self::CharGrid => Self::LogPanel,
-            Self::Sidebar  => Self::CharGrid,
+            Self::Sidebar => Self::CharGrid,
             Self::LogPanel => Self::Sidebar,
         }
     }

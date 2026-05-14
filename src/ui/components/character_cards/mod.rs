@@ -173,7 +173,10 @@ impl Component for CharacterCards {
                 if gs.focused_panel == FocusedPanel::CharGrid && !gs.characters.is_empty() {
                     self.selected = (self.selected + 1) % gs.characters.len();
                     drop(gs);
-                    self.game_state.write().unwrap().selected_character = self.selected;
+                    self.game_state
+                        .write()
+                        .unwrap()
+                        .selected_character = self.selected;
                 }
             }
             Action::FocusPrev => {
@@ -185,7 +188,10 @@ impl Component for CharacterCards {
                         self.selected - 1
                     };
                     drop(gs);
-                    self.game_state.write().unwrap().selected_character = self.selected;
+                    self.game_state
+                        .write()
+                        .unwrap()
+                        .selected_character = self.selected;
                 }
             }
             Action::MaximizeCharacter => {

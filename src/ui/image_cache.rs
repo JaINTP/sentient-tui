@@ -166,7 +166,9 @@ impl ImageCache {
     ) -> Option<Arc<DynamicImage>> {
         let base_url = {
             let c = cache.lock().unwrap();
-            c.sync_base_url.clone().unwrap_or_else(|| BASE_URL.to_string())
+            c.sync_base_url
+                .clone()
+                .unwrap_or_else(|| BASE_URL.to_string())
         };
         Self::get_or_fetch_from(cache, &base_url, category, code)
     }
@@ -293,7 +295,8 @@ impl ImageCache {
                             if is_permanent {
                                 c.failed.insert(key.clone());
                             } else {
-                                c.transient_failed.insert(key.clone(), Instant::now());
+                                c.transient_failed
+                                    .insert(key.clone(), Instant::now());
                             }
                             c.total_completed += 1;
                         }

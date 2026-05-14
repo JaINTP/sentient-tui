@@ -154,12 +154,24 @@ impl Component for LogPanel {
             Action::ToggleLog => self.visible = !self.visible,
             Action::FilterLog => self.filter_active = !self.filter_active,
             Action::FocusNext => {
-                if self.game_state.read().unwrap().focused_panel == FocusedPanel::LogPanel {
+                if self
+                    .game_state
+                    .read()
+                    .unwrap()
+                    .focused_panel
+                    == FocusedPanel::LogPanel
+                {
                     self.log_scroll = self.log_scroll.saturating_sub(1);
                 }
             }
             Action::FocusPrev => {
-                if self.game_state.read().unwrap().focused_panel == FocusedPanel::LogPanel {
+                if self
+                    .game_state
+                    .read()
+                    .unwrap()
+                    .focused_panel
+                    == FocusedPanel::LogPanel
+                {
                     self.log_scroll = self.log_scroll.saturating_add(1);
                 }
             }
@@ -185,8 +197,12 @@ impl Component for LogPanel {
             let gs = self.game_state.read().unwrap();
             let focused = gs.focused_panel == FocusedPanel::LogPanel;
             let filter_name = if self.filter_active {
-                let idx = gs.selected_character.min(gs.characters.len().saturating_sub(1));
-                gs.characters.get(idx).map(|c| c.name.clone())
+                let idx = gs
+                    .selected_character
+                    .min(gs.characters.len().saturating_sub(1));
+                gs.characters
+                    .get(idx)
+                    .map(|c| c.name.clone())
             } else {
                 None
             };
@@ -200,7 +216,11 @@ impl Component for LogPanel {
             None if self.filter_active => " Log [L/F] ".to_string(),
             _ => " Log [L] [F] ".to_string(),
         };
-        let border_color = if focused { Color::Cyan } else { Color::DarkGray };
+        let border_color = if focused {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        };
         let block = Block::default()
             .title(Span::styled(title_text, Style::default().fg(Color::DarkGray)))
             .borders(Borders::ALL)
@@ -228,7 +248,7 @@ impl Component for LogPanel {
         let passes = |e: &&LogEntry| {
             filter_name
                 .as_deref()
-                .map_or(true, |name| e.character.is_empty() || e.character == name)
+                .is_none_or(|name| e.character.is_empty() || e.character == name)
         };
         let filtered_count = entries.iter().filter(passes).count();
         let visible_rows = inner.height as usize;
@@ -236,7 +256,13 @@ impl Component for LogPanel {
         self.log_scroll = self.log_scroll.min(max_scroll);
 
         // Reserve one column for the scrollbar when it is visible.
-        let content_width = inner.width.saturating_sub(if max_scroll > 0 { 1 } else { 0 });
+        let content_width = inner
+            .width
+            .saturating_sub(if max_scroll > 0 {
+                1
+            } else {
+                0
+            });
 
         // ── Build list items (most recent at bottom) ──────────────────────
         let items: Vec<ListItem> = entries
@@ -282,7 +308,9 @@ impl Component for LogPanel {
                 self.fx_manager
                     .process_effects(dur, frame.buffer_mut(), row);
             }
-            self.glitch_timer_ms = self.glitch_timer_ms.saturating_sub(elapsed_ms);
+            self.glitch_timer_ms = self
+                .glitch_timer_ms
+                .saturating_sub(elapsed_ms);
             if self.glitch_timer_ms == 0 {
                 self.fx_manager = EffectManager::default();
             }
